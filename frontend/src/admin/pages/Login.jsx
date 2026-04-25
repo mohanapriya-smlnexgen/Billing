@@ -1,0 +1,122 @@
+// src/components/Login.jsx
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import API from "../../api";
+
+const Login = () => {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ identifier: "", password: "" });
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = (e) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const res = await API.post("login/", {
+        identifier: form.identifier.trim(),
+        password: form.password,
+      });
+
+      const { user, access, refresh } = res.data;
+
+      // Save tokens
+      localStorage.setItem("access_token", access);
+      localStorage.setItem("refresh_token", refresh);
+      localStorage.setItem("user", JSON.stringify(user));
+
+      setMessage("Login successful! Redirecting...");
+
+      // ✅ DIRECT REDIRECT (NO ROLE)
+      setTimeout(() => {
+        navigate("/menu");
+      }, 800);
+
+    } catch (err) {
+      console.log(err.response?.data);
+      setMessage(err.response?.data?.error || "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center p-5 font-sans">
+      <div className="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl p-10 shadow-2xl border border-white/30">
+
+        {/* Logo */}
+        <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-2xl">
+          <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 7h.01M12 11h.01M12 15h.01" />
+          </svg>
+        </div>
+
+        <h2 className="text-center text-3xl font-bold text-gray-800 mb-2">
+          Welcome Back
+        </h2>
+
+        <p className="text-center text-gray-600 text-sm mb-8">
+          Login to continue
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <input
+            type="text"
+            name="identifier"
+            placeholder="Username or Email"
+            value={form.identifier}
+            onChange={handleChange}
+            required
+            className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300"
+          />
+
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            value={form.password}
+            onChange={handleChange}
+            required
+            className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300"
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-3.5 rounded-xl font-semibold text-white ${
+              loading
+                ? "bg-gray-400"
+                : "bg-gradient-to-r from-purple-600 to-pink-600"
+            }`}
+          >
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+
+        {message && (
+          <div className="mt-5 p-3 rounded-lg text-center text-sm border">
+            {message}
+          </div>
+        )}
+
+        <div className="mt-6 text-center text-sm text-gray-600">
+          <p className="mb-3">Don't have an account?</p>
+          <button
+            onClick={() => navigate("/signup")}
+            className="w-full py-3 rounded-xl text-purple-600 border-2 border-purple-600"
+          >
+            Sign Up
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Login;

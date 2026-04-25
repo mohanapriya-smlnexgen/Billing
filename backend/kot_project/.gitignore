@@ -1,0 +1,88 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# testing
+coverage/
+
+# production
+build/
+dist/
+
+# misc
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+
+# React
+*.log
+*.tmp
+.eslintcache
+
+# Vite
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+# TypeScript
+*.tsbuildinfo
+
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+staticfiles/
+*.sqlite3
+.env
+venv/
+env/
+.venv/
+
+# Python
+*.pyo
+*.pyd
+*.swp
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+
+# migrations cache
+**/__pycache__/
+*.egg-info/
+.eggs/
+
+# PostgreSQL
+*.sql
+
+# Docker
+docker-compose.override.yml
+
+# temporary files
+tmp/
+temp/
+.cache/
+
+node_modules/
+venv/
+dist/
+build/
+*.log
+__pycache__/
+*.pyc
