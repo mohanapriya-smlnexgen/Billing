@@ -39,6 +39,8 @@ export default function BillingPage() {
   const [categories, setCategories] = useState(["all"]);
   const [loading, setLoading] = useState(true);
   const [savedBills, setSavedBills] = useState([]);
+  const [preOrderAlerts, setPreOrderAlerts] = useState([]);
+const [showAlertModal, setShowAlertModal] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
@@ -82,7 +84,45 @@ export default function BillingPage() {
     setShowTaxEditor(false);
     alert("Tax percentage updated successfully");
   };
+const fetchPreOrderAlerts = async () => {
+  try {
+    const res = await axios.get(BILL_API);
 
+    const data = Array.isArray(res.data)
+      ? res.data
+      : res.data.results || [];
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const alerts = data.filter((o) => {
+      if (!o.scheduled_time) return false;
+
+      const orderDate = new Date(o.scheduled_time)
+        .toISOString()
+        .split("T")[0];
+
+      return (
+        orderDate === today &&
+        o.status !== "paid" &&
+        (o.is_advance || o.advance_paid > 0 || o.remaining_amount > 0)
+      );
+    });
+
+    setPreOrderAlerts(alerts);
+
+  } catch (err) {
+    console.error("Alert fetch error", err);
+  }
+};
+useEffect(() => {
+  fetchPreOrderAlerts();
+
+  const interval = setInterval(() => {
+    fetchPreOrderAlerts();
+  }, 30000); // every 30 sec
+
+  return () => clearInterval(interval);
+}, []);
   const fetchReportEmail = async () => {
     try {
       const response = await axios.get(REPORT_API);
@@ -613,6 +653,20 @@ const printKOT = () => {
                   onBlur={handleSaveAdminEmail}
                 />
              </div>
+             <div className="relative">
+  <button
+    onClick={() => setShowAlertModal(true)}
+    className="p-2 hover:bg-yellow-50 rounded-full text-yellow-600 relative"
+  >
+    🔔
+    
+    {preOrderAlerts.length > 0 && (
+      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+        {preOrderAlerts.length}
+      </span>
+    )}
+  </button>
+</div>
           </div>
         </div>
 
@@ -1070,6 +1124,67 @@ const printKOT = () => {
           </div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+  {showAlertModal && (
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-[200]">
+      <motion.div
+        initial={{ scale: 0.9 }}
+        animate={{ scale: 1 }}
+        className="bg-white w-full max-w-md rounded-2xl shadow-xl"
+      >
+        <div className="p-4 border-b flex justify-between">
+          <h2 className="font-bold text-lg">Today's Pre Orders</h2>
+          <button onClick={() => setShowAlertModal(false)}>✕</button>
+        </div>
+
+        <div className="max-h-96 overflow-y-auto p-4 space-y-3">
+          {preOrderAlerts.length === 0 ? (
+            <p className="text-center text-gray-400">
+              No alerts today
+            </p>
+          ) : (
+            preOrderAlerts.map((o) => (
+              <div
+                key={o.id}
+                className="border p-3 rounded-xl bg-yellow-50"
+              >
+                <p className="font-bold">
+                  #{o.order_id}
+                </p>
+
+                <p className="text-sm">
+                  👤 {o.customer?.name || "Guest"}
+                </p>
+
+                <p className="text-sm">
+                  📞 {o.customer?.phone || "-"}
+                </p>
+
+                <p className="text-sm">
+                  🕒 {new Date(o.scheduled_time).toLocaleString()}
+                </p>
+
+                <p className="text-red-600 font-semibold">
+                  Balance: ₹{o.remaining_amount}
+                </p>
+
+                <button
+                  onClick={() => {
+                    handleSelectBill(o);
+                    setShowAlertModal(false);
+                  }}
+                  className="mt-2 text-xs bg-indigo-600 text-white px-3 py-1 rounded"
+                >
+                  Open Order
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  )}
+</AnimatePresence>
     </div>
   );
 }
