@@ -8,7 +8,8 @@ import EditFoodForm from "./EditFoodForm";
 import TableList from "./TableList";
 import TimingManager from "../pages/Timingmanage";
 import OrderHistory from './OrderHistory';
-
+import CustomersPage from '../../users/components/CustomersPage';
+import PreOrderHistory from "../../users/components/PreOrderHistory"
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -101,6 +102,10 @@ const Dashboard = () => {
         return <TimingManager />;
       case "order-history":
         return <OrderHistory />;
+      case "customers":
+        return <CustomersPage />;
+      case "preorders":
+         return <PreOrderHistory />;
       case "edit-food":
         return <EditFoodForm foodId={editingFoodId} onBack={handleBackToFoodList} />;
       default:
@@ -160,7 +165,7 @@ const Dashboard = () => {
               </svg>
               Dashboard
             </button>
-
+       
             <button
               onClick={() => handleSectionChange("food-menu")}
               className={`w-full flex items-center px-4 py-3 text-left font-medium rounded-lg transition ${activeSection === "food-menu"
@@ -211,6 +216,35 @@ const Dashboard = () => {
               </svg>
               Order History
             </button>
+            <button
+  onClick={() => handleSectionChange("customers")}
+  className={`w-full flex items-center px-4 py-3 text-left font-medium rounded-lg transition ${
+    activeSection === "customers"
+      ? "text-indigo-600 bg-indigo-50 border-r-4 border-indigo-600"
+      : "text-gray-700 hover:bg-gray-50"
+  }`}
+>
+  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2
+      M7 20H2v-2a3 3 0 015.356-1.857M15 7a3 3 0 11-6 0" />
+  </svg>
+  Customers
+</button>
+<button
+  onClick={() => handleSectionChange("preorders")}
+  className={`w-full flex items-center px-4 py-3 text-left font-medium rounded-lg transition ${
+    activeSection === "preorders"
+      ? "text-indigo-600 bg-indigo-50 border-r-4 border-indigo-600"
+      : "text-gray-700 hover:bg-gray-50"
+  }`}
+>
+  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M8 7V3m8 4V3m-9 8h10M5 21h14" />
+  </svg>
+  Pre Orders
+</button>
 
           </nav>
 

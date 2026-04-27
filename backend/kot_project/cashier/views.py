@@ -12,160 +12,241 @@ from django.db.models import Sum, Q
 from datetime import date
 
 from django.conf import settings
-from .models import Order, OrderItem
-from .serializers import OrderSerializer
+from .models import DiscountSetting, Order, OrderItem, Customer
+from .serializers import CustomerSerializer, OrderSerializer
 from management.models import AdminUser
 
 
 class CashierOrderViewSet(viewsets.ModelViewSet):
-    """
-    API for Cashier:
-    - List all orders (pending + paid)
-    - Create new order (waiter → cashier)
-    - Mark order as paid
-    - Cancel order
-    - Get today's collection summary
-    - Refund order (partial or full)
-    """
+   
     queryset = Order.objects.prefetch_related('items').order_by('-created_at')
     serializer_class = OrderSerializer
     permission_classes = [AllowAny]  # Use IsAuthenticated in production
+    @action(detail=False, methods=['get'], url_path='search_customer')
+    def search_customer(self, request):
+        phone = request.query_params.get('phone')
 
-    # ──────────────────────────────
-    # 1. CREATE ORDER (Waiter → Cashier)
-    # ──────────────────────────────
-    # cashier/views.py - Update the create_order method
-    # cashier/views.py
+        if not phone:
+            return Response({"detail": "Phone required"}, status=400)
+
+        try:
+            customer = Customer.objects.get(phone=phone)
+            return Response({
+                "id": customer.id,
+                "name": customer.name,
+                "phone": customer.phone,
+                "credits": float(customer.credits)
+            })
+        except Customer.DoesNotExist:
+            return Response({
+                "detail": "Customer not found",
+                "exists": False
+            }, status=404)
+    @action(detail=False, methods=['post'], url_path='preview_discount')
+    def preview_discount(self, request):
+        total = Decimal(str(request.data.get('total_amount', 0)))
+
+        discount = Decimal('0')
+        discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+
+        if discount_obj and total >= discount_obj.min_amount:
+            discount = (total * discount_obj.discount_percent) / 100
+
+        return Response({
+            "discount": float(discount)
+      })
     @action(detail=False, methods=['post'], url_path='create_order')
     def create_order(self, request):
-        print("API DB:", settings.DATABASES['default']['NAME'])
         data = request.data
 
         try:
-            required = ['total_amount', 'cart']
-            missing = [field for field in required if field not in data]
+            cart = data.get('cart', [])
+            if not cart:
+                return Response({"detail": "Cart is empty"}, status=400)
 
-            if missing:
-                return Response(
-                    {"detail": f"Missing fields: {', '.join(missing)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            # ───── CUSTOMER ─────
+            customer = None
+            phone = data.get('phone')
 
-            waiter = None
-            waiter_id = data.get('waiter')
+            if phone:
+                customer = Customer.objects.filter(phone=phone).first()
 
-            if waiter_id:
-                try:
-                    waiter = AdminUser.objects.get(id=waiter_id)
-                except AdminUser.DoesNotExist:
-                    return Response(
-                        {"detail": "Invalid waiter_id"},
-                        status=status.HTTP_400_BAD_REQUEST
+                if customer:
+    # Update name if it's empty OR still "Guest"
+                    if (not customer.name or customer.name.lower() == "guest") and data.get("name"):
+                        customer.name = data.get("name")
+                        customer.save()
+                else:
+                    customer = Customer.objects.create(
+                        phone=phone,
+                        name=data.get("name", "Guest")
                     )
 
-            payment_mode = data.get('payment_mode', 'cash').lower()
-            selected_seats = data.get('selected_seats', [])
-            table_id = data.get('table_id')
-
-            order = Order.objects.create(
-                table_number=data.get('table_number') or None,
-                table_id=table_id,
-                selected_seats=selected_seats,
-                total_amount=Decimal(str(data['total_amount'])),
-                received_amount=Decimal(str(data.get('received_amount', 0))),
-                payment_mode=payment_mode,
-                status='pending',
-                waiter=waiter
-            )
-
-            cart = data.get('cart', [])
-
-            if not isinstance(cart, list):
-                return Response(
-                    {"detail": "cart must be a list"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            order_items = []
+            # ───── AMOUNTS ─────
+            total = Decimal('0')
 
             for item in cart:
-                if not all(k in item for k in ['name', 'quantity', 'price']):
-                    return Response(
-                        {"detail": "Each cart item must contain name, quantity and price"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                price = Decimal(str(item.get('price', 0)))
+                qty = int(item.get('quantity', 0))
+                total += price * qty
 
-                order_items.append(
-                    OrderItem(
-                        order=order,
-                        food_id=item.get('food_id') or item.get('id'),
-                        name=str(item['name']),
-                        quantity=int(item['quantity']),
-                        price=float(item['price'])
-                    )
-                )
+            if total <= 0:
+                return Response({"detail": "Invalid total amount"}, status=400)
 
-            OrderItem.objects.bulk_create(order_items)
+            # ───── DISCOUNT (AUTO) ─────
+            # ───── DISCOUNT ─────
+            discount = Decimal(str(data.get('discount', 0)))
 
-            serializer = OrderSerializer(order)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            # Apply auto discount ONLY if manual discount is 0
+            if discount == 0:
+                discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+                if discount_obj and total >= discount_obj.min_amount:
+                    discount = (total * discount_obj.discount_percent) / 100
+
+            # ───── CREDIT ─────
+            credit = Decimal(str(data.get('credit', 0)))
+
+            if credit < 0:
+                return Response({"detail": "Invalid credit"}, status=400)
+
+            if customer:
+                if credit > customer.credits:
+                    return Response({"detail": "Not enough credits"}, status=400)
+            custom_price = data.get('custom_price')
+
+            if custom_price is not None:
+                final_amount = Decimal(str(custom_price))
+            else:
+                final_amount = total - discount - credit
+            # ───── FINAL AMOUNT ─────
+            advance = Decimal(str(data.get('advance_paid', 0)))
+            custom_price = data.get('custom_price')
+
+            if custom_price is not None:
+                final_amount = Decimal(str(custom_price))
+            else:
+                final_amount = total - discount - credit
+
+            if final_amount < 0:
+                final_amount = Decimal('0')
+            
+
+            remaining_amount = final_amount - advance
+
+            # Never allow negative remaining
+            if remaining_amount < 0:
+                remaining_amount = Decimal('0')
+            # status logic
+            # NEVER auto mark paid on create
+            if advance > 0:
+                status_value = 'advance_paid'
+            else:
+                status_value = 'pending'
+
+            if final_amount < 0:
+                final_amount = Decimal('0')
+
+            # ───── ALERTS ─────
+            if discount > (total * Decimal('0.5')):
+                print("⚠ High discount detected")
+
+            if total > 5000:
+                print("🔥 High value order")
+
+            if customer and customer.credits < 50:
+                print(f"⚠ Low credits for {customer.name}")
+
+            # ───── CREATE ORDER ─────
+            order = Order.objects.create(
+            customer=customer,
+            total_amount=total,
+            discount_amount=discount,
+            credit_used=credit,
+            final_amount=final_amount,
+
+            advance_paid=advance,              # ✅ NEW
+            remaining_amount=remaining_amount, # ✅ NEW
+
+            payment_mode = data.get('payment_mode') or 'cash',
+            is_bulk=data.get('is_bulk', False),
+            bulk_note=data.get('bulk_note', ''),
+            is_advance=data.get('is_advance', False),
+            scheduled_time=data.get('scheduled_time'),
+            source=data.get('source', 'offline'),
+            external_order_id=data.get('external_order_id', ''),
+
+            status=status_value               # ✅ IMPORTANT
+        )
+
+            # ───── SAVE ITEMS ─────
+            items = []
+            for item in cart:
+                items.append(OrderItem(
+                    order=order,
+                    food_id=item.get('food_id'),
+                    name=item['name'],
+                    quantity=item['quantity'],
+                    price=item['price']
+                ))
+
+            OrderItem.objects.bulk_create(items)
+
+            # ───── DEDUCT CUSTOMER CREDIT ─────
+            if customer and credit > 0:
+                customer.credits -= credit
+                customer.save()
+
+            return Response(OrderSerializer(order).data)
 
         except Exception as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+            return Response({"detail": str(e)}, status=400)
     # ──────────────────────────────
     # 2. MARK AS PAID
     # ──────────────────────────────
     @action(detail=True, methods=['post'], url_path='mark_paid')
     def mark_paid(self, request, pk=None):
-        try:
-            order = self.get_object()
+        order = self.get_object()
 
-            # ❌ Prevent double payment
-            if order.status == 'paid':
-                return Response(
-                    {"detail": "Order already paid"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        if order.status == 'paid':
+            return Response({"detail": "Already paid"}, status=400)
 
-            # ✅ Get data safely
-            received_amount = Decimal(str(request.data.get('received_amount', 0)))
-            payment_mode = request.data.get('payment_mode', 'cash').lower()
+        received = Decimal(str(request.data.get('received_amount', 0)))
 
-            # ❌ Validate amount
-            if received_amount <= 0:
-                return Response(
-                    {"detail": "Received amount must be greater than 0"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        if received <= 0:
+            return Response({"detail": "Invalid payment amount"}, status=400)
 
-            if received_amount < order.total_amount:
-                return Response(
-                    {"detail": "Received amount is less than total amount"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        # ✅ ALWAYS use remaining_amount (single source of truth)
+        due = order.remaining_amount
 
-            # ✅ Update order
-            order.received_amount = received_amount
-            order.payment_mode = payment_mode
-            order.status = 'paid'
-            order.paid_at = timezone.now()
-            order.save()
+        if due <= 0:
+            return Response({"detail": "Order already settled"}, status=400)
 
-            # ✅ IMPORTANT: Return FULL ORDER (fixes frontend issues)
-            serializer = self.get_serializer(order)
+        if received < due:
+            return Response({"detail": "Insufficient amount"}, status=400)
 
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        # ✅ Add payment (important)
+        order.received_amount += received
 
-        except Exception as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    # ──────────────────────────────
+        # ✅ Calculate change
+        change = received - due
+
+        # ✅ Close order
+        order.remaining_amount = Decimal('0')
+        order.status = 'paid'
+        order.paid_at = timezone.now()
+
+        order.save()
+
+        # ✅ CREDIT RETURN (loyalty)
+        if order.customer and change > 0:
+            order.customer.credits += change
+            order.customer.save()
+
+        return Response({
+            **OrderSerializer(order).data,
+            "change_returned": float(change)  # 🔥 useful for frontend
+        })
+# ──────────────────────────────
     # 3. CANCEL ORDER
     # ──────────────────────────────
     @action(detail=True, methods=['post'], url_path='cancel_order')
@@ -204,11 +285,11 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         )
 
         collection = paid_orders.aggregate(
-            total=Sum('total_amount'),
-            cash=Sum('total_amount', filter=Q(payment_mode='cash')),
-            card=Sum('total_amount', filter=Q(payment_mode='card')),
-            upi=Sum('total_amount', filter=Q(payment_mode='upi')),
-        )
+        total=Sum('final_amount'),
+        cash=Sum('final_amount', filter=Q(payment_mode='cash')),
+        card=Sum('final_amount', filter=Q(payment_mode='card')),
+        upi=Sum('final_amount', filter=Q(payment_mode='upi')),
+    )
 
         result = {
             "total": float(collection['total'] or 0),
@@ -218,7 +299,31 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         }
 
         return Response(result, status=status.HTTP_200_OK)
+    @action(detail=False, methods=['get'], url_path='advance_orders')
+    def advance_orders(self, request):
+        status_filter = request.query_params.get('type')  # all / upcoming / due
 
+        now = timezone.now()
+
+        qs = Order.objects.filter(is_advance=True)
+
+        if status_filter == 'upcoming':
+            qs = qs.filter(scheduled_time__gte=now)
+        elif status_filter == 'due':
+            qs = qs.filter(scheduled_time__lte=now)
+
+        return Response(OrderSerializer(qs.order_by('-created_at'), many=True).data)
+    @action(detail=False, methods=['get'], url_path='upcoming_orders')
+    def upcoming_orders(self, request):
+        now = timezone.now()
+
+        orders = Order.objects.filter(
+            is_advance=True,
+            scheduled_time__lte=now,
+            status='advance_paid'
+        )
+
+        return Response(OrderSerializer(orders, many=True).data)
     # ──────────────────────────────
     # 5. REFUND ORDER (Partial or Full)
     # ──────────────────────────────
@@ -268,3 +373,11 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             return Response({"error": f"Invalid amount: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    @action(detail=False, methods=['get'], url_path='bulk_orders')
+    def bulk_orders(self, request):
+        orders = Order.objects.filter(is_bulk=True).order_by('-created_at')
+        return Response(OrderSerializer(orders, many=True).data)
+# views.py
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all().order_by('-id')
+    serializer_class = CustomerSerializer

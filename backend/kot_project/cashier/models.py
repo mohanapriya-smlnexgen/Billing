@@ -4,86 +4,80 @@ from django.core.validators import MinValueValidator
 from django.utils import timezone
 from management.models import AdminUser
 
-class Order(models.Model):
-    PAYMENT_MODE_CHOICES = [
-        ('cash', 'Cash'),
-        ('card', 'Card'),
-        ('upi', 'UPI'),
-    ]
+class Customer(models.Model):
+    name = models.CharField(max_length=100)
+    phone = models.CharField(max_length=15, unique=True)
+    email = models.EmailField(blank=True, null=True)
+    credits = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
+    updated_at = models.DateTimeField(auto_now=True)  # NEW
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)  # NEW
+
+    def __str__(self):
+        return f"{self.name} ({self.phone})"
+class Order(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
+        ('advance_paid', 'Advance Paid'), 
         ('paid', 'Paid'),
         ('cancelled', 'Cancelled'),
     ]
 
-    waiter = models.ForeignKey(
-        AdminUser,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='orders'
-    )
+    SOURCE_CHOICES = [
+        ('offline', 'Offline'),
+        ('zomato', 'Zomato'),
+        ('swiggy', 'Swiggy'),
+    ]
+
     order_id = models.AutoField(primary_key=True)
-    table_number = models.PositiveIntegerField(validators=[MinValueValidator(1)],null=True, blank=True )
-    
-    # NEW: Store seat information
-    selected_seats = models.JSONField(default=list, blank=True, help_text="List of selected seat numbers")
-    table_id = models.IntegerField(null=True, blank=True, help_text="Reference to RestaurantTable")
-    
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    received_amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    balance_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, editable=False)
-    payment_mode = models.CharField(max_length=10, choices=PAYMENT_MODE_CHOICES, default='cash')
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True)
+
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    credit_used = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    final_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    payment_mode = models.CharField(max_length=20, default='cash')
+    received_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Bulk & advance
+    is_bulk = models.BooleanField(default=False)
+    bulk_note = models.TextField(blank=True)
+
+    is_advance = models.BooleanField(default=False)
+    scheduled_time = models.DateTimeField(null=True, blank=True)
+    advance_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    remaining_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # External tracking
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='offline')
+    external_order_id = models.CharField(max_length=100, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
 
-    # Refund fields
-    refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    is_refunded = models.BooleanField(default=False)
-    refund_reason = models.TextField(blank=True, null=True)
-    refunded_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['table_number']),
-            models.Index(fields=['status']),
-            models.Index(fields=['paid_at']),
-        ]
-
-    def save(self, *args, **kwargs):
-        from decimal import Decimal
-
-        # Auto-calculate balance (change)
-        self.balance_amount = max(self.received_amount - self.total_amount, Decimal('0'))
-
-        # Auto-set paid_at
-        if self.status == 'paid' and not self.paid_at:
-            self.paid_at = timezone.now()
-
-        # Auto-update refund flag
-        if self.refunded_amount and self.refunded_amount > 0:
-            self.is_refunded = True
-        else:
-            self.is_refunded = False
-
-        super().save(*args, **kwargs)
+    refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
-        seats_info = f" - Seats: {', '.join(self.selected_seats)}" if self.selected_seats else ""
-        return f"Order #{self.order_id} - Table {self.table_number}{seats_info}"
-
+        return f"Order #{self.order_id}"
+    def balance_amount(self):
+        return self.received_amount - self.final_amount
 
 class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
+    food_id = models.IntegerField(null=True)
     name = models.CharField(max_length=200)
-    quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    food_id = models.IntegerField(null=True, blank=True)
+    quantity = models.IntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
     def subtotal(self):
         return self.quantity * self.price
+class DiscountSetting(models.Model):
+    name = models.CharField(max_length=100)
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2)
+    is_active = models.BooleanField(default=True)
+    min_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
-        return f"{self.quantity}× {self.name}"
+        return f"{self.name} ({self.discount_percent}%)"

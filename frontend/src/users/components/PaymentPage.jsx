@@ -27,11 +27,12 @@ export default function PaymentPage() {
     const [occupiedTables, setOccupiedTables] = useState([]); // NEW: Occupied tables state
     
   // ONLINE
+  const BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const [showOnlineOptions, setShowOnlineOptions] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState("");
 
   const submittingRef = useRef(false);
-  const OCCUPIED_TABLES_API = "http://127.0.0.1:8000/api/tables/occupied-tables/";
+  const OCCUPIED_TABLES_API = `${BASE_URL}/tables/occupied-tables/`;
   // redirect safety
   if (!cart || !tableNumber) {
     navigate("/");
@@ -79,7 +80,7 @@ export default function PaymentPage() {
 
     try {
       const res = await axios.post(
-        "http://127.0.0.1:8000/api/cashier-orders/create_order/",
+        `${BASE_URL}/cashier-orders/create_order/`,
         payload
       );
 

@@ -11,7 +11,8 @@ export default function OrderSuccess() {
   const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
   const { tableNumber, cart, selectedSeats = [], tableId } = state || {};
   const [occupiedTables, setOccupiedTables] = useState([]); // NEW: Occupied tables state
-  const OCCUPIED_TABLES_API = "http://127.0.0.1:8000/api/tables/occupied-tables/";
+  const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  const OCCUPIED_TABLES_API = `${BASE_URL}/tables/occupied-tables/`;
   const navigate = useNavigate();
 
   const {

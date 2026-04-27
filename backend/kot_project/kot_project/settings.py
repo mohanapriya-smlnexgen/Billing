@@ -24,9 +24,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 STATIC_URL = '/static/'
 
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'staticfiles'),
-]
+# STATICFILES_DIRS = [
+#     os.path.join(BASE_DIR, 'staticfiles'),
+# ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
@@ -75,10 +75,10 @@ MIDDLEWARE = [
  
 ROOT_URLCONF = 'kot_project.urls'
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://billing.33threads.in",
+    "http://billing.33threads.in",
 ]
  
 REST_FRAMEWORK = {

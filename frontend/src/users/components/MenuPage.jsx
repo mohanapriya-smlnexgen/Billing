@@ -22,12 +22,12 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import Navbar from "./Navbar";
-
-const API_URL = "http://127.0.0.1:8000/api/food-menu/";
-const TABLES_API = "http://127.0.0.1:8000/api/tables/active-numbers/";
-const TABLE_SEATS_API = "http://127.0.0.1:8000/api/tables/table-seats/";
-const OCCUPIED_TABLES_API = "http://127.0.0.1:8000/api/tables/occupied-tables/";
-const MARK_SEAT_AVAILABLE_API = "http://127.0.0.1:8000/api/tables/mark-seat-available/";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_URL = `${BASE_URL}/food-menu/`;
+const TABLES_API = `${BASE_URL}/tables/active-numbers/`;
+const TABLE_SEATS_API = `${BASE_URL}/tables/table-seats/`;
+const OCCUPIED_TABLES_API = `${BASE_URL}/tables/occupied-tables/`;
+const MARK_SEAT_AVAILABLE_API = `${BASE_URL}/tables/mark-seat-available/`;
 
 export default function MenuPage() {
   const navigate = useNavigate();

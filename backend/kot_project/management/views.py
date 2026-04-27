@@ -689,7 +689,7 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         # Remove 'table' and use 'waiter' instead
-        return Order.objects.select_related('waiter').prefetch_related('items').order_by('-created_at')
+        return Order.objects.select_related('customer').prefetch_related('items').order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         try:
@@ -700,26 +700,24 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
             for order in qs:
                 orders.append({
                     "order_id": order.order_id,
-                    "table_number": order.table_number,
                     "total_amount": str(order.total_amount),
                     "received_amount": str(order.received_amount),
-                    "balance_amount": str(order.balance_amount),
+                    "balance_amount": str((order.total_amount or 0) - (order.received_amount or 0)),
                     "payment_mode": order.payment_mode,
                     "status": order.status,
                     "created_at": order.created_at.isoformat(),
                     "paid_at": order.paid_at.isoformat() if order.paid_at else None,
-                    # Include waiter information if needed
-                    "waiter": order.waiter.username if order.waiter else None,
+                    "customer_name": order.customer.name if order.customer else "Walk-in",
                     "items": [
                         {
                             "name": item.name,
                             "quantity": item.quantity,
                             "price": str(item.price),
-                            "subtotal": str(item.subtotal()),
+                            "subtotal": str(item.quantity * float(item.price)),
                         }
                         for item in order.items.all()
                     ],
-                })
+})
             return Response({"orders": orders})
         except Exception as e:
             print(f"Error in list view: {str(e)}")
@@ -776,7 +774,7 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
         qs = self.apply_filters(qs, request)
 
         # IMPORTANT: Select + prefetch to avoid N+1 queries
-        qs = qs.select_related('waiter').prefetch_related('items').iterator(chunk_size=1000)
+        qs = qs.select_related('customer').prefetch_related('items').iterator(chunk_size=1000)
 
         response = HttpResponse(content_type='text/csv')
         filename = f"order_history_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -784,8 +782,8 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
 
         writer = csv.writer(response)
         writer.writerow([
-            'Order ID', 'Table', 'Items', 'Total (₹)', 'Received (₹)', 'Balance (₹)',
-            'Payment Mode', 'Status', 'Waiter', 'Created At', 'Paid At'
+            'Order ID', 'Items', 'Total (₹)', 'Received (₹)', 'Balance (₹)',
+            'Payment Mode', 'Status', 'Customer', 'Created At', 'Paid At'
         ])
 
         for order in qs:
@@ -797,14 +795,13 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
 
             writer.writerow([
                 order.order_id,
-                order.table_number or '',
                 items_str,
                 str(order.total_amount or 0),
                 str(order.received_amount or 0),
-                str(order.balance_amount or 0),
+                str((order.total_amount or 0) - (order.received_amount or 0)),
                 (order.payment_mode or '').capitalize(),
                 (order.status or '').capitalize(),
-                order.waiter.username if order.waiter else 'No Waiter',
+                order.customer.name if order.customer else 'Walk-in',
                 order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 order.paid_at.strftime('%Y-%m-%d %H:%M:%S') if order.paid_at else '-',
             ])
@@ -880,3 +877,15 @@ from django.views.generic import TemplateView
 
 class FrontendAppView(TemplateView):
     template_name = "index.html"
+from django.core.management import call_command
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
+class TriggerReportView(APIView):
+    def post(self, request):
+        try:
+            call_command('send_daily_report') 
+            return Response({"message": "Report sent successfully"})
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)

@@ -2,7 +2,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    RegisterView, ReportSettingView, RestaurantSettingView, VerifyOTPView, LoginView, SendEmailOTPView,
+    RegisterView, ReportSettingView, RestaurantSettingView, TriggerReportView, VerifyOTPView, LoginView, SendEmailOTPView,
     FoodItemViewSet,RestaurantTableViewSet,SubCategoryViewSet,OrderHistoryViewSet,TableSeatViewSet
 )
 from .views import FrontendAppView
@@ -25,6 +25,7 @@ urlpatterns = [
     path('restaurant-setting/', RestaurantSettingView.as_view(), name='restaurant-setting'),
     # === FOOD MENU: Custom CREATE Path (No auth required) ===
     path('create-food/', FoodItemViewSet.as_view({'post': 'create'}), name='create-food'),
+    path('send-report/', TriggerReportView.as_view()),
 
     # === FOOD MENU: List, Detail, Update, Delete via Router ===
     path('', include(router.urls)),  # /food-menu/ , /food-menu/1/ , etc.
