@@ -2,12 +2,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../../api";
+import { Eye, EyeOff } from "lucide-react";   // ← Add this import
 
 const Login = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({ identifier: "", password: "" });
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);   // ← New state
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -25,14 +27,12 @@ const Login = () => {
 
       const { user, access, refresh } = res.data;
 
-      // Save tokens
       localStorage.setItem("access_token", access);
       localStorage.setItem("refresh_token", refresh);
       localStorage.setItem("user", JSON.stringify(user));
 
       setMessage("Login successful! Redirecting...");
 
-      // ✅ DIRECT REDIRECT (NO ROLE)
       setTimeout(() => {
         navigate("/menu");
       }, 800);
@@ -66,6 +66,7 @@ const Login = () => {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Username/Email Field */}
           <input
             type="text"
             name="identifier"
@@ -73,26 +74,41 @@ const Login = () => {
             value={form.identifier}
             onChange={handleChange}
             required
-            className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300"
+            className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300 focus:border-purple-500 focus:outline-none"
           />
 
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={handleChange}
-            required
-            className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300"
-          />
+          {/* Password Field with Toggle */}
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              name="password"
+              placeholder="Password"
+              value={form.password}
+              onChange={handleChange}
+              required
+              className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-300 focus:border-purple-500 focus:outline-none pr-12"
+            />
+            
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              {showPassword ? (
+                <EyeOff size={20} />
+              ) : (
+                <Eye size={20} />
+              )}
+            </button>
+          </div>
 
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-3.5 rounded-xl font-semibold text-white ${
+            className={`w-full py-3.5 rounded-xl font-semibold text-white transition-all ${
               loading
-                ? "bg-gray-400"
-                : "bg-gradient-to-r from-purple-600 to-pink-600"
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-purple-600 to-pink-600 hover:brightness-105"
             }`}
           >
             {loading ? "Logging in..." : "Login"}
@@ -100,7 +116,11 @@ const Login = () => {
         </form>
 
         {message && (
-          <div className="mt-5 p-3 rounded-lg text-center text-sm border">
+          <div className={`mt-5 p-3 rounded-lg text-center text-sm border ${
+            message.includes("successful") 
+              ? "bg-green-100 text-green-700 border-green-200" 
+              : "bg-red-100 text-red-700 border-red-200"
+          }`}>
             {message}
           </div>
         )}
@@ -109,7 +129,7 @@ const Login = () => {
           <p className="mb-3">Don't have an account?</p>
           <button
             onClick={() => navigate("/signup")}
-            className="w-full py-3 rounded-xl text-purple-600 border-2 border-purple-600"
+            className="w-full py-3 rounded-xl text-purple-600 border-2 border-purple-600 hover:bg-purple-50 transition-colors"
           >
             Sign Up
           </button>
