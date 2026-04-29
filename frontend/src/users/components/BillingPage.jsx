@@ -1063,69 +1063,69 @@ export default function BillingPage() {
         {/* Right: Order Panel */}
         <div className="w-96 flex flex-col">
           <BillingRightPanel
-            cart={cart}
-            updateQty={updateQty}
-            setCart={setCart}
-            setSelectedBill={setSelectedBill}
+  cart={cart}
+  updateQty={updateQty}
+  setCart={setCart}
+  setSelectedBill={setSelectedBill}
+  menuItems={menuItems}
+  subtotal={subtotal}
+  tax={tax}
+  taxPercentage={taxPercentage}
+  discount={discount}
+  setDiscount={setDiscount}
+  credit={credit}
+  setCredit={setCredit}
+  finalTotal={finalTotal}
+  advanceAmount={advanceAmount}
 
-            subtotal={subtotal}
-            tax={tax}
-            taxPercentage={taxPercentage}
-            discount={discount}
-            setDiscount={setDiscount}
-            credit={credit}
-            setCredit={setCredit}
-            finalTotal={finalTotal}
-            advanceAmount={advanceAmount}
+  selectedBill={selectedBill}
 
-            selectedBill={selectedBill}
+  showTaxEditor={showTaxEditor}
+  setShowTaxEditor={setShowTaxEditor}
+  taxPercentageValue={taxPercentage}
+  setTaxPercentage={setTaxPercentage}
+  handleSaveTaxPercentage={() => {
+    localStorage.setItem("tax_percentage", taxPercentage);
+    setShowTaxEditor(false);
+  }}
 
-            showTaxEditor={showTaxEditor}
-            setShowTaxEditor={setShowTaxEditor}
-            taxPercentageValue={taxPercentage}
-            setTaxPercentage={setTaxPercentage}
-            handleSaveTaxPercentage={() => {
-              localStorage.setItem("tax_percentage", taxPercentage);
-              setShowTaxEditor(false);
-            }}
+  handleGenerateBill={handleGenerateBill}
+  setShowPaymentModal={setShowPaymentModal}
 
-            handleGenerateBill={handleGenerateBill}
-            setShowPaymentModal={setShowPaymentModal}
+  setShowPendingModal={setShowPendingModal}
+  printKOT={printKOT}
+  printBill={printBill}
 
-            setShowPendingModal={setShowPendingModal}
-            printKOT={printKOT}
-            printBill={printBill}
+  showCustomerDetails={showCustomerDetails}
+  setShowCustomerDetails={setShowCustomerDetails}
 
-            showCustomerDetails={showCustomerDetails}
-            setShowCustomerDetails={setShowCustomerDetails}
+  customerPhone={customerPhone}
+  setCustomerPhone={setCustomerPhone}
+  customerName={customerName}
+  setCustomerName={setCustomerName}
 
-            customerPhone={customerPhone}
-            setCustomerPhone={setCustomerPhone}
-            customerName={customerName}
-            setCustomerName={setCustomerName}
+  customerFound={customerFound}
+  customerCredits={customerCredits}
+  customerCreditsValue={customerCredits}
 
-            customerFound={customerFound}
-            customerCredits={customerCredits}
-            customerCreditsValue={customerCredits}
+  orderType={orderType}
+  setOrderType={setOrderType}
+  scheduledTime={scheduledTime}
+  setScheduledTime={setScheduledTime}
+  bulkNote={bulkNote}
+  setBulkNote={setBulkNote}
 
-            orderType={orderType}
-            setOrderType={setOrderType}
-            scheduledTime={scheduledTime}
-            setScheduledTime={setScheduledTime}
-            bulkNote={bulkNote}
-            setBulkNote={setBulkNote}
+  customPrice={customPrice}
+  setCustomPrice={setCustomPrice}
+  setAdvanceAmount={setAdvanceAmount}
 
-            customPrice={customPrice}
-            setCustomPrice={setCustomPrice}
-            setAdvanceAmount={setAdvanceAmount}
+  source={source}
+  setSource={setSource}
+  externalOrderId={externalOrderId}
+  setExternalOrderId={setExternalOrderId}
 
-            source={source}
-            setSource={setSource}
-            externalOrderId={externalOrderId}
-            setExternalOrderId={setExternalOrderId}
-
-            searchCustomer={searchCustomer}
-          />
+ searchCustomer={searchCustomer}
+/>
         </div>
       </main>
 

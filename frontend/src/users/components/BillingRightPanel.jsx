@@ -31,6 +31,7 @@ export const BillingRightPanel = (props) => {
     setShowPendingModal,
     savedBills,
     handleSelectBill,
+    menuItems,
     tax,
     discount,
     advanceAmount,
@@ -217,6 +218,7 @@ export const BillingRightPanel = (props) => {
           onClose={() => setShowCustomerModal(false)}
           customerPhone={customerPhone}
           setCustomerPhone={setCustomerPhone}
+          menuItems={menuItems} 
           customerName={customerName}
           setCustomerName={setCustomerName}
           customerFound={customerFound}
@@ -226,6 +228,8 @@ export const BillingRightPanel = (props) => {
           credit={credit}
           setCredit={setCredit}
           orderType={orderType}
+          setCart={setCart}
+          cart={cart}
           setOrderType={setOrderType}
           scheduledTime={scheduledTime}
           setScheduledTime={setScheduledTime}
