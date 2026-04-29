@@ -35,9 +35,9 @@ const PreOrderHistory = () => {
       // ✅ Correct Pre-order Logic
       const advanceOrders = data.filter(
         (o) =>
-          o.is_advance ||
-          o.advance_paid > 0 ||
-          o.remaining_amount > 0
+          
+          o.advance_paid > 0
+         
       );
 
       setOrders(advanceOrders);
