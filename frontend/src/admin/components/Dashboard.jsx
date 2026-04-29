@@ -32,20 +32,19 @@ const Dashboard = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
 
-    const fetchKOTs = async () => {
-      try {
-        const res = await API.get("kots/", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setKots(res.data.kots || []);
-      } catch (err) {
-        console.error("Failed to fetch KOTs:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchOrders = async () => {
+  try {
+    const res = await API.get("/orders/");
+    const data = res.data.orders || [];
+    setKots(data); // reuse same state
+  } catch (err) {
+    console.error("Failed to fetch orders:", err);
+  } finally {
+    setLoading(false);
+  }
+};
 
-    fetchKOTs();
+    fetchOrders();
   }, [navigate]);
 
   const handleLogout = () => {
@@ -79,6 +78,7 @@ const Dashboard = () => {
   const handleOverlayClick = () => {
     setSidebarOpen(false);
   };
+
 
   if (loading) {
     return (
@@ -300,13 +300,59 @@ const Dashboard = () => {
 };
 
 // Dashboard Home Component
+// Dashboard Home Component
 const DashboardHome = ({ kots, user }) => {
+
+  // 🔹 Calculate Top Selling Items
+  const topItems = {};
+  kots.forEach(order => {
+    order.items?.forEach(item => {
+      const name = item.name || "Item";
+      topItems[name] = (topItems[name] || 0) + (item.quantity || 1);
+    });
+  });
+
+  const sortedTopItems = Object.entries(topItems)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  // 🔹 Discount State
+  const [discount, setDiscount] = React.useState({
+    type: "percentage",
+    value: 0
+  });
+const [saving, setSaving] = React.useState(false);
+
+const handleSaveDiscount = async () => {
+  try {
+    setSaving(true);
+
+    if (!discount.value || discount.value <= 0) {
+      alert("Enter valid discount");
+      return;
+    }
+
+    await API.post("/cashier-orders/set_discount/", {
+      percent: discount.type === "percentage" ? discount.value : 0
+    });
+
+    alert("✅ Discount saved successfully");
+
+  } catch (err) {
+    console.error(err);
+    alert("❌ Failed to save discount");
+  } finally {
+    setSaving(false);
+  }
+};
   return (
     <>
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 lg:mb-8">
         <div>
-          <h2 className="text-2xl lg:text-3xl font-bold text-gray-800">Welcome, {user?.username}!</h2>
-          
+          <h2 className="text-2xl lg:text-3xl font-bold text-gray-800">
+            Welcome, {user?.username}!
+          </h2>
         </div>
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 lg:px-6 lg:py-3 rounded-xl font-semibold shadow-lg text-sm lg:text-base">
           <button onClick={() => window.history.back()}>Back</button>
@@ -315,109 +361,154 @@ const DashboardHome = ({ kots, user }) => {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-6 lg:mb-8">
-        <div className="bg-white rounded-xl lg:rounded-2xl shadow-lg p-4 lg:p-6">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 bg-blue-100 rounded-lg lg:rounded-xl">
-              <svg className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <div className="ml-3 lg:ml-4">
-              <p className="text-sm font-medium text-gray-600">Active KOTs</p>
-              <p className="text-xl lg:text-2xl font-bold text-gray-900">
-                {kots.filter(kot => kot.status === 'pending').length}
-              </p>
-            </div>
-          </div>
+        
+        {/* Active */}
+        <div className="bg-white rounded-xl shadow-lg p-4 lg:p-6">
+          <p className="text-sm text-gray-600">Active KOTs</p>
+          <p className="text-2xl font-bold text-indigo-600">
+            {kots.filter(o => o.status === 'pending').length}
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl lg:rounded-2xl shadow-lg p-4 lg:p-6">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 bg-green-100 rounded-lg lg:rounded-xl">
-              <svg className="w-5 h-5 lg:w-6 lg:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="ml-3 lg:ml-4">
-              <p className="text-sm font-medium text-gray-600">Completed</p>
-              <p className="text-xl lg:text-2xl font-bold text-gray-900">
-                {kots.filter(kot => kot.status === 'completed').length}
-              </p>
-            </div>
-          </div>
+        {/* Completed */}
+        <div className="bg-white rounded-xl shadow-lg p-4 lg:p-6">
+          <p className="text-sm text-gray-600">Completed</p>
+          <p className="text-2xl font-bold text-green-600">
+            {kots.filter(o => o.status === 'paid').length}
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl lg:rounded-2xl shadow-lg p-4 lg:p-6">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 bg-purple-100 rounded-lg lg:rounded-xl">
-              <svg className="w-5 h-5 lg:w-6 lg:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
+        {/* Orders Count */}
+        <div className="bg-white rounded-xl shadow-lg p-4 lg:p-6">
+          <p className="text-sm text-gray-600">Total Orders</p>
+          <p className="text-2xl font-bold text-purple-600">
+            {kots.length}
+          </p>
+        </div>
+      </div>
+
+      {/* 🔥 New Section: Top Selling + Discount */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+        {/* 🔹 Top Selling Items */}
+        <div className="bg-white rounded-2xl shadow-lg p-5">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            🔥 Top Selling Items
+          </h3>
+
+          {sortedTopItems.length === 0 ? (
+            <p className="text-gray-500 text-sm">No data available</p>
+          ) : (
+            <ul className="space-y-3">
+              {sortedTopItems.map(([name, qty], index) => (
+                <li
+                  key={index}
+                  className="flex justify-between items-center bg-gray-50 px-4 py-3 rounded-lg"
+                >
+                  <span className="font-medium text-gray-700">{name}</span>
+                  <span className="text-indigo-600 font-semibold">
+                    {qty} sold
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* 🔹 Discount Settings */}
+        <div className="bg-white rounded-2xl shadow-lg p-5">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            💸 Discount Settings
+          </h3>
+
+          <div className="space-y-4">
+            
+            {/* Type */}
+            <div>
+              <label className="text-sm text-gray-600">Discount Type</label>
+              <select
+                value={discount.type}
+                onChange={(e) =>
+                  setDiscount({ ...discount, type: e.target.value })
+                }
+                className="w-full mt-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="percentage">Percentage (%)</option>
+                <option value="fixed">Fixed Amount (₹)</option>
+              </select>
             </div>
-            <div className="ml-3 lg:ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Tables</p>
-              <p className="text-xl lg:text-2xl font-bold text-gray-900">
-                {[...new Set(kots.map(kot => kot.table_number))].length}
-              </p>
+
+            {/* Value */}
+            <div>
+              <label className="text-sm text-gray-600">Value</label>
+              <input
+                type="number"
+                value={discount.value}
+                onChange={(e) =>
+                  setDiscount({ ...discount, value: e.target.value })
+                }
+                className="w-full mt-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                placeholder="Enter discount"
+              />
             </div>
+
+            {/* Preview */}
+            <div className="bg-indigo-50 p-3 rounded-lg text-sm text-indigo-700">
+              {discount.type === "percentage"
+                ? `Applying ${discount.value || 0}% discount`
+                : `Applying ₹${discount.value || 0} discount`}
+            </div>
+
+            {/* Save Button */}
+           <button
+  onClick={handleSaveDiscount}
+  disabled={saving}
+  className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+>
+  {saving ? "Saving..." : "Save Discount"}
+</button>
           </div>
         </div>
       </div>
 
-      {/* Recent KOTs Table */}
-      <div className="bg-white rounded-xl lg:rounded-2xl shadow-lg p-4 lg:p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 lg:mb-6">
-          <h3 className="text-lg lg:text-xl font-semibold text-gray-800">Recent KOTs</h3>
-          <span className="text-xs lg:text-sm text-gray-500">Last 10 orders</span>
-        </div>
+      {/* Recent Orders (Updated - removed table column) */}
+      <div className="bg-white rounded-2xl shadow-lg p-5">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          Recent Orders
+        </h3>
 
         {kots.length === 0 ? (
-          <div className="text-center py-6 lg:py-8">
-            <svg className="mx-auto h-10 w-10 lg:h-12 lg:w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <p className="mt-3 lg:mt-4 text-gray-500">No KOTs found</p>
-            <p className="text-xs lg:text-sm text-gray-400 mt-1">Orders will appear here when created</p>
-          </div>
+          <p className="text-gray-500 text-center py-6">No orders found</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 lg:py-3 px-2 lg:px-4 font-semibold text-gray-600 text-xs lg:text-sm">Table</th>
-                  <th className="text-left py-2 lg:py-3 px-2 lg:px-4 font-semibold text-gray-600 text-xs lg:text-sm">Items</th>
-                  <th className="text-left py-2 lg:py-3 px-2 lg:px-4 font-semibold text-gray-600 text-xs lg:text-sm">Total Amount</th>
-                  <th className="text-left py-2 lg:py-3 px-2 lg:px-4 font-semibold text-gray-600 text-xs lg:text-sm">Status</th>
-                  <th className="text-left py-2 lg:py-3 px-2 lg:px-4 font-semibold text-gray-600 text-xs lg:text-sm">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kots.slice(0, 10).map((kot) => (
-                  <tr key={kot.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-2 lg:py-3 px-2 lg:px-4 font-medium text-xs lg:text-sm">Table {kot.table_number}</td>
-                    <td className="py-2 lg:py-3 px-2 lg:px-4">
-                      <span className="text-xs lg:text-sm text-gray-600">
-                        {kot.items?.length || 0} items
-                      </span>
-                    </td>
-                    <td className="py-2 lg:py-3 px-2 lg:px-4 font-semibold text-xs lg:text-sm">
-                      ₹{kot.total_amount || 0}
-                    </td>
-                    <td className="py-2 lg:py-3 px-2 lg:px-4">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${kot.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800'
-                        }`}>
-                        {kot.status}
-                      </span>
-                    </td>
-                    <td className="py-2 lg:py-3 px-2 lg:px-4 text-xs lg:text-sm text-gray-500">
-                      {new Date(kot.created_at).toLocaleTimeString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {kots.slice(0, 10).map((kot) => (
+              <div
+                key={kot.id}
+                className="flex justify-between items-center bg-gray-50 p-4 rounded-xl"
+              >
+                <div>
+                  <p className="font-medium text-gray-800">
+                    {kot.items?.length || 0} items
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(kot.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="font-bold text-gray-900">
+                    ₹{kot.custom_price ?? kot.final_amount ?? kot.total_amount ?? 0}
+                  </p>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    kot.status === "pending"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-green-100 text-green-700"
+                  }`}>
+                    {kot.status}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
