@@ -19,6 +19,8 @@ import WaiterOrderHistory from "./users/components/WaiterOrderHistory";
 import Stocks from "./cashier/pages/Stocks";
 import TableManage from "./cashier/components/TableManage";
 import BillingPage from "./users/components/BillingPage";
+import CustomerDetailsPage from "./users/components/CustomerDetailsPage";
+import CustomersPage from "./users/components/CustomersPage";
 
 
 // ======================================================
@@ -182,6 +184,8 @@ function App() {
 
       {/* FALLBACK */}
       <Route path="*" element={<Navigate to="/login" />} />
+      <Route path="/customers" element={<CustomersPage/>} />
+<Route path="/customers/:id" element={<CustomerDetailsPage/>} />
     </Routes>
   );
 }

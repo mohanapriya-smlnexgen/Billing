@@ -166,7 +166,23 @@ class FoodItem(models.Model):
                 return self.image
         
         return str(self.image)          
+class FoodVariant(models.Model):
+    UNIT_CHOICES = [
+        ('kg', 'Kilogram'),
+        ('g', 'Gram'),
+        ('qty', 'Quantity'),
+    ]
 
+    food_item = models.ForeignKey(FoodItem, on_delete=models.CASCADE, related_name='variants')
+    
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES)
+    value = models.DecimalField(max_digits=6, decimal_places=2)  
+   
+
+    price = models.DecimalField(max_digits=8, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.food_item.food_name} - {self.value}{self.unit} = ₹{self.price}"
 class RestaurantTable(models.Model):
     table_id = models.AutoField(primary_key=True)
     table_number = models.CharField(max_length=10, unique=True)

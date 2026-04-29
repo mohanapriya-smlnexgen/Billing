@@ -378,6 +378,28 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         orders = Order.objects.filter(is_bulk=True).order_by('-created_at')
         return Response(OrderSerializer(orders, many=True).data)
 # views.py
+# views.py
+
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all().order_by('-id')
     serializer_class = CustomerSerializer
+
+    # Add this action to handle /api/customers/{id}/orders/
+    @action(detail=True, methods=['get'])
+    def orders(self, request, pk=None):
+        customer = self.get_object()
+        # Fetch all orders for this customer, including their items
+        orders = Order.objects.filter(customer=customer).prefetch_related('items').order_by('-created_at')
+        
+        # We reuse the OrderSerializer you already have
+        serializer = OrderSerializer(orders, many=True)
+        
+        return Response({
+            "customer": CustomerSerializer(customer).data,
+            "orders": serializer.data
+        })
+
+    # Optional: If you want the list view to include order counts for your "State" logic
+    def get_queryset(self):
+        from django.db.models import Count
+        return Customer.objects.annotate(order_count=Count('order')).order_by('-id')
