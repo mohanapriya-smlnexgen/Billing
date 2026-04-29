@@ -4,45 +4,39 @@ import API from "../../api";
 
 const EditFoodForm = ({ food, onSuccess, onCancel }) => {
   const [form, setForm] = useState({
-    category: food?.category || "food",
-    subcategory: food?.subcategory || "",
-    food_type: food?.food_type || "veg",
-    food_name: food?.food_name || "",
-    price: food?.price || "",
-    description: food?.description || "",
+    category: "food",
+    subcategory: "",
+    food_type: "veg",
+    food_name: "",
+    description: "",
     image: null,
   });
+
+  const [variants, setVariants] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [loadingSubcategories, setLoadingSubcategories] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // CLOUDINARY (Unsigned Upload)
-  const CLOUDINARY_CLOUD_NAME = "dkq48nzr3";
+  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/dkq48nzr3/image/upload`;
   const CLOUDINARY_UPLOAD_PRESET = "kot-menu-preset";
-  const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
-  // Fetch subcategories from API
+  // Fetch subcategories
   useEffect(() => {
     const fetchSubcategories = async () => {
       try {
-        setLoadingSubcategories(true);
-        const response = await API.get("subcategories/");
-        setSubcategories(response.data);
-      } catch (error) {
-        console.error("Failed to fetch subcategories:", error);
-        setMessage("Failed to load subcategories");
-        // Fallback to empty array
+        const res = await API.get("subcategories/");
+        setSubcategories(res.data);
+      } catch {
         setSubcategories([]);
       } finally {
         setLoadingSubcategories(false);
       }
     };
-
     fetchSubcategories();
   }, []);
 
-  // Update form when food prop changes
+  // Load food data + variants
   useEffect(() => {
     if (food) {
       setForm({
@@ -50,10 +44,15 @@ const EditFoodForm = ({ food, onSuccess, onCancel }) => {
         subcategory: food.subcategory || "",
         food_type: food.food_type || "veg",
         food_name: food.food_name || "",
-        price: food.price || "",
         description: food.description || "",
         image: null,
       });
+
+      setVariants(
+        food.variants?.length
+          ? food.variants
+          : [{ unit: "qty", value: 1, price: "" }]
+      );
     }
   }, [food]);
 
@@ -62,67 +61,69 @@ const EditFoodForm = ({ food, onSuccess, onCancel }) => {
     setForm({ ...form, [name]: files ? files[0] : value });
   };
 
+  // Variant handlers
+  const handleVariantChange = (index, field, value) => {
+    const updated = [...variants];
+    updated[index][field] = value;
+    setVariants(updated);
+  };
+
+  const addVariant = () => {
+    setVariants([...variants, { unit: "qty", value: 1, price: "" }]);
+  };
+
+  const removeVariant = (index) => {
+    setVariants(variants.filter((_, i) => i !== index));
+  };
+
   const uploadToCloudinary = async (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    const data = new FormData();
+    data.append("file", file);
+    data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
     const res = await fetch(CLOUDINARY_URL, {
       method: "POST",
-      body: formData,
+      body: data,
     });
 
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || "Image upload failed");
-    }
-    const data = await res.json();
-    return data.secure_url;
+    const json = await res.json();
+    return json.secure_url;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage("");
     setUploading(true);
+    setMessage("");
 
     try {
-      let imageUrl = food?.image || ""; // Keep existing image if no new one uploaded
+      let imageUrl = food?.image || "";
+
       if (form.image) {
         imageUrl = await uploadToCloudinary(form.image);
       }
 
       const payload = {
-        category: form.category,
-        subcategory: form.subcategory || null,
-        food_type: form.food_type,
-        food_name: form.food_name.trim(),
-        price: parseFloat(form.price),
-        description: form.description?.trim() || null,
+        ...form,
         image: imageUrl,
+        price: 0,
+        variants: variants.map((v) => ({
+          unit: v.unit,
+          value: parseFloat(v.value),
+          price: parseFloat(v.price),
+        })),
       };
 
-      await API.put(`food-menu/${food.food_id}/`, payload, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      await API.put(`food-menu/${food.food_id}/`, payload);
 
-      setMessage("Food item updated successfully!");
+      setMessage("Food updated successfully!");
 
-      // Call success callback
       setTimeout(() => {
-        if (onSuccess) {
-          onSuccess();
-        }
-      }, 1500);
+        onSuccess && onSuccess();
+      }, 1200);
 
     } catch (err) {
-      console.error("Update food error:", err);
-      setMessage(
-        err.response?.data?.error ||
-        err.message ||
-        "Failed to update food item. Check console."
-      );
+      console.error(err);
+      setMessage("Failed to update food item");
     } finally {
       setUploading(false);
     }
@@ -130,179 +131,125 @@ const EditFoodForm = ({ food, onSuccess, onCancel }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+
+      {/* BASIC DETAILS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Category */}
+
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-          <select
-            name="category"
-            value={form.category}
-            onChange={handleChange}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition"
-          >
+          <label className="text-sm font-medium">Category</label>
+          <select name="category" value={form.category} onChange={handleChange} className="w-full border p-2 rounded-xl">
             <option value="food">Food</option>
             <option value="cafe">Cafe</option>
           </select>
         </div>
 
-        {/* Subcategory - DYNAMIC FROM API */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Subcategory
-            {loadingSubcategories && (
-              <span className="ml-2 text-xs text-gray-500">(Loading...)</span>
-            )}
-          </label>
-          <select
-            name="subcategory"
-            value={form.subcategory}
-            onChange={handleChange}
-            disabled={loadingSubcategories}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition disabled:bg-gray-100 disabled:cursor-not-allowed"
-          >
-            <option value="">-- Select Subcategory --</option>
-            {subcategories.map((subcat) => (
-              <option 
-                key={subcat.subcategory_id} 
-                value={subcat.subcategory_name}
-              >
-                {subcat.subcategory_name}
+          <label className="text-sm font-medium">Subcategory</label>
+          <select name="subcategory" value={form.subcategory} onChange={handleChange} className="w-full border p-2 rounded-xl">
+            <option value="">Select</option>
+            {subcategories.map((s) => (
+              <option key={s.subcategory_id} value={s.subcategory_name}>
+                {s.subcategory_name}
               </option>
             ))}
-            {subcategories.length === 0 && !loadingSubcategories && (
-              <option value="" disabled>No subcategories available</option>
-            )}
           </select>
-          {subcategories.length === 0 && !loadingSubcategories && (
-            <p className="mt-1 text-xs text-amber-600">
-              No subcategories found. Please create some in the "Manage Subcategories" section first.
-            </p>
-          )}
         </div>
 
-        {/* Food Type */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Food Type</label>
-          <select
-            name="food_type"
-            value={form.food_type}
-            onChange={handleChange}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition"
-          >
+          <label className="text-sm font-medium">Food Type</label>
+          <select name="food_type" value={form.food_type} onChange={handleChange} className="w-full border p-2 rounded-xl">
             <option value="veg">Veg</option>
             <option value="nonveg">Non-Veg</option>
             <option value="egg">Egg</option>
           </select>
         </div>
 
-        {/* Food Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Food Name</label>
+          <label className="text-sm font-medium">Food Name</label>
           <input
-            type="text"
             name="food_name"
             value={form.food_name}
             onChange={handleChange}
-            required
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition"
+            className="w-full border p-2 rounded-xl"
           />
-        </div>
-
-        {/* Price */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Price (₹)</label>
-          <input
-            type="number"
-            name="price"
-            value={form.price}
-            onChange={handleChange}
-            required
-            step="0.01"
-            min="0"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition"
-          />
-        </div>
-
-        {/* Image */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Image
-            {food?.image && (
-              <span className="ml-2 text-xs text-green-600">(Current image will be kept if no new file selected)</span>
-            )}
-          </label>
-          <input
-            id="image"
-            type="file"
-            name="image"
-            accept="image/*"
-            onChange={handleChange}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-          />
-          {food?.image && !form.image && (
-            <div className="mt-2">
-              <p className="text-xs text-gray-500 mb-1">Current Image:</p>
-              <img 
-                src={food.image} 
-                alt={food.food_name}
-                className="h-20 w-20 rounded-lg object-cover border border-gray-200"
-              />
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Description */}
+      {/* VARIANTS */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Description (Optional)</label>
-        <textarea
-          name="description"
-          value={form.description}
-          onChange={handleChange}
-          rows="3"
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition resize-none"
-        />
+        <h3 className="font-semibold mb-2">Pricing Variants</h3>
+
+        {variants.map((v, index) => (
+          <div key={index} className="flex gap-3 mb-2">
+
+            <select
+              value={v.unit}
+              onChange={(e) => handleVariantChange(index, "unit", e.target.value)}
+              className="border p-2 rounded-xl"
+            >
+              <option value="kg">Kg</option>
+              <option value="g">Gram</option>
+              <option value="qty">Qty</option>
+            </select>
+
+            <input
+              type="number"
+              placeholder="Value"
+              value={v.value}
+              onChange={(e) => handleVariantChange(index, "value", e.target.value)}
+              className="border p-2 rounded-xl"
+            />
+
+            <input
+              type="number"
+              placeholder="Price"
+              value={v.price}
+              onChange={(e) => handleVariantChange(index, "price", e.target.value)}
+              className="border p-2 rounded-xl"
+            />
+
+            {variants.length > 1 && (
+              <button type="button" onClick={() => removeVariant(index)} className="text-red-500">
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+
+        <button type="button" onClick={addVariant} className="text-indigo-600 mt-2">
+          + Add Variant
+        </button>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex space-x-4 pt-4">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-center font-medium text-gray-700 hover:bg-gray-50 transition"
-        >
+      {/* IMAGE */}
+      <div>
+        <label className="text-sm font-medium">Image</label>
+        <input type="file" name="image" onChange={handleChange} className="w-full border p-2 rounded-xl" />
+        {food?.image && (
+          <img src={food.image} alt="" className="h-20 mt-2 rounded" />
+        )}
+      </div>
+
+      {/* DESCRIPTION */}
+      <textarea
+        name="description"
+        value={form.description}
+        onChange={handleChange}
+        className="w-full border p-2 rounded-xl"
+      />
+
+      {/* ACTIONS */}
+      <div className="flex gap-4">
+        <button type="button" onClick={onCancel} className="w-full border p-3 rounded-xl">
           Cancel
         </button>
-        <button
-          type="submit"
-          disabled={uploading || loadingSubcategories}
-          className={`flex-1 py-3 rounded-xl font-semibold text-white transition transform ${
-            uploading || loadingSubcategories
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-xl active:scale-95"
-          }`}
-        >
-          {uploading 
-            ? "Uploading & Saving..." 
-            : loadingSubcategories
-            ? "Loading Subcategories..."
-            : "Update Food Item"
-          }
+
+        <button type="submit" className="w-full bg-indigo-600 text-white p-3 rounded-xl">
+          {uploading ? "Updating..." : "Update Food"}
         </button>
       </div>
 
-      {/* Message */}
-      {message && (
-        <div
-          className={`mt-4 p-3 rounded-lg text-center text-sm font-medium border ${
-            message.includes("success")
-              ? "bg-green-50 text-green-800 border-green-200"
-              : "bg-red-50 text-red-800 border-red-200"
-          }`}
-        >
-          {message}
-        </div>
-      )}
+      {message && <p className="text-center text-sm">{message}</p>}
     </form>
   );
 };

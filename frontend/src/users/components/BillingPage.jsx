@@ -22,7 +22,14 @@ import {
   Phone,
   Calendar,
   FileText,
-  AlertCircle
+  AlertCircle,
+  ShoppingBag,
+  ChevronRight,   // ✅ ADD THIS
+  Filter,  
+  AppWindowMacIcon,
+  PersonStanding,
+  PersonStandingIcon,
+  
 } from "lucide-react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,6 +45,7 @@ const SETTING_API = `${BASE_URL}/restaurant-setting/`;
 export default function BillingPage() {
   const [search, setSearch] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  // const [selectedVariants, setSelectedVariants] = useState({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [cart, setCart] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
@@ -49,6 +57,7 @@ export default function BillingPage() {
   const [selectedBill, setSelectedBill] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [selectedVariants, setSelectedVariants] = useState({});
   const [customPrice, setCustomPrice] = useState(0);
   const [showCustomerDetails, setShowCustomerDetails] = useState(true);
   const [orderType, setOrderType] = useState("normal");
@@ -56,6 +65,7 @@ export default function BillingPage() {
   const [paymentMode, setPaymentMode] = useState("cash");
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [customerName, setCustomerName] = useState("");
+  
   const [customerPhone, setCustomerPhone] = useState("");
   const [discount, setDiscount] = useState(0);
   const [credit, setCredit] = useState(0);
@@ -71,6 +81,7 @@ export default function BillingPage() {
   const [taxPercentage, setTaxPercentage] = useState(Number(localStorage.getItem("tax_percentage")) || 5);
   const [showTaxEditor, setShowTaxEditor] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+const [pendingFilter, setPendingFilter] = useState("all");
   
   const navigate = useNavigate();
 
@@ -116,7 +127,24 @@ export default function BillingPage() {
     const interval = setInterval(() => fetchPreOrderAlerts(), 30000);
     return () => clearInterval(interval);
   }, []);
+const filteredPendingBills = savedBills
+  .filter(b => b.status !== "paid")
+  .filter(b => {
+    const search = pendingSearch.toLowerCase();
 
+    const matchSearch =
+      b.order_id?.toString().includes(search) ||
+      b.customer_name?.toLowerCase().includes(search) ||
+      b.phone?.includes(search);
+
+    const matchFilter =
+      pendingFilter === "all" ||
+      (pendingFilter === "preorder" && b.is_advance) ||
+      (pendingFilter === "bulk" && b.is_bulk) ||
+      (pendingFilter === "normal" && !b.is_bulk && !b.is_advance);
+
+    return matchSearch && matchFilter;
+  });
   const fetchReportEmail = async () => {
     try {
       const response = await axios.get(REPORT_API);
@@ -124,20 +152,32 @@ export default function BillingPage() {
     } catch (error) { console.error(error); }
   };
 
-  const searchCustomer = async (phone) => {
-    if (!phone) return;
-    try {
-      const res = await axios.get(`${BILL_API}search_customer/?phone=${phone}`);
-      setCustomerName(res.data.name || "");
-      setCustomerCredits(res.data.credits || 0);
-      setCustomerId(res.data.id);
-      setCustomerFound(true);
-    } catch (err) {
-      setCustomerFound(false);
-      setCustomerCredits(0);
-      setCustomerName("");
-    }
-  };
+const searchCustomer = async (phone) => {
+  if (!phone || phone.length !== 10) return;
+
+  try {
+    console.log("Searching:", phone);
+
+    const res = await axios.get(
+      `${BASE_URL}/cashier-orders/search_customer/?phone=${phone}`
+    );
+
+    console.log("✅ API RESPONSE:", res);        // full response
+    console.log("✅ DATA:", res.data);           // actual data
+
+    setCustomerName(res.data?.name || "");
+    setCustomerCredits(res.data?.credits || 0);
+    setCustomerId(res.data?.id || null);
+    setCustomerFound(true);
+
+  } catch (err) {
+    console.error("❌ API ERROR:", err.response || err);
+
+    setCustomerFound(false);
+    setCustomerCredits(0);
+    setCustomerName("");
+  }
+};
 
   const handleSaveRestaurantName = async () => {
     try {
@@ -182,11 +222,12 @@ export default function BillingPage() {
       const categoriesData = Array.isArray(catsRes.data) ? catsRes.data : catsRes.data.results || [];
 
       setMenuItems(itemsData.map((item, index) => ({
-        food_id: item.id || index + 1,
-        name: item.food_name,
-        price: Number(item.price),
-        category: item.category?.toLowerCase() || "uncategorized",
-      })));
+  food_id: item.id || index + 1,
+  name: item.food_name,
+  price: Number(item.price),
+  category: item.category?.toLowerCase() || "uncategorized",
+  variants: item.variants || []   // ✅ ADD THIS
+})));
 
       setCategories(["all", ...categoriesData.map((cat) => typeof cat === "string" ? cat.toLowerCase() : cat.name?.toLowerCase())]);
     } catch (error) { console.error(error); } finally { setLoading(false); }
@@ -207,21 +248,41 @@ export default function BillingPage() {
     });
   }, [search, selectedCategory, menuItems]);
 
-  const addToCart = (item) => {
-    const existing = cart.find((c) => c.food_id === item.food_id);
-    if (existing) {
-      setCart(cart.map((c) => c.food_id === item.food_id ? { ...c, quantity: c.quantity + 1 } : c));
-    } else {
-      setCart([...cart, { ...item, quantity: 1 }]);
-    }
-  };
+ const addToCart = (item) => {
+  const existing = cart.find(
+    c =>
+      c.food_id === item.food_id &&
+      c.variant_info === item.variant_info
+  );
 
-  const updateQty = (foodId, type) => {
-    setCart((prev) => prev.map((item) => {
-      if (item.food_id !== foodId) return item;
-      return { ...item, quantity: type === "inc" ? item.quantity + 1 : item.quantity - 1 };
-    }).filter((item) => item.quantity > 0));
-  };
+  if (existing) {
+    setCart(cart.map(c =>
+      c.food_id === item.food_id &&
+      c.variant_info === item.variant_info
+        ? { ...c, quantity: c.quantity + 1 }
+        : c
+    ));
+  } else {
+    setCart([...cart, { ...item, quantity: 1 }]);
+  }
+};
+
+ const updateQty = (foodId, variant, type) => {
+  setCart(prev =>
+    prev
+      .map(item => {
+        if (item.food_id !== foodId || item.variant_info !== variant) return item;
+
+        return {
+          ...item,
+          quantity: type === "inc"
+            ? item.quantity + 1
+            : item.quantity - 1
+        };
+      })
+      .filter(item => item.quantity > 0)
+  );
+};
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   
@@ -236,7 +297,11 @@ export default function BillingPage() {
   const tax = subtotal * (taxPercentage / 100);
   const total = subtotal + tax;
   const computedTotal = total - discount - credit;
-  const finalTotal = orderType !== "normal" && customPrice > 0 ? customPrice : Math.max(computedTotal, 0);
+  const finalTotal = Number(
+  orderType !== "normal" && customPrice > 0
+    ? customPrice
+    : Math.max(computedTotal, 0)
+);
   const dueAmount = (selectedBill?.custom_price || selectedBill?.final_amount || finalTotal) - (selectedBill?.advance_paid || selectedBill?.received_amount || 0);
   const balance = cashReceived - dueAmount;
 
@@ -259,15 +324,30 @@ export default function BillingPage() {
         advance_paid: advanceAmount || 0,
         payment_mode: advanceAmount > 0 ? "cash" : null,
         status: "pending",
-        cart: cart.map((item) => ({
-          food_id: item.food_id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-        })),
+        cart: cart.map((item) => {
+  let qty = item.quantity;
+
+  if (orderType === "bulk" && bulkNote) {
+    let qty = item.quantity;
+
+if (orderType === "bulk" && bulkNote) {
+  const parsed = parseBulkQty(bulkNote);
+  qty = parsed.qty;
+}
+  }
+
+  return {
+    food_id: item.food_id,
+    name: item.name,
+    quantity: qty,
+    price: item.price,
+  };
+}),
       };
+      
       const res = await axios.post(`${BILL_API}create_order/`, payload);
-      setSelectedBill(res.data);
+      setSelectedBill(null);
+setShowPendingModal(true);
       setCart([]);
       setAdvanceAmount(0);
       setTimeout(() => printAdvanceBill(res.data), 500);
@@ -276,7 +356,24 @@ export default function BillingPage() {
       console.error(err);
     }
   };
+const parseBulkQty = (note) => {
+  if (!note) return { qty: 1, unit: "pcs" };
 
+  const match = note.toLowerCase().match(/(\d+(\.\d+)?)\s*(kg|g|pcs)?/);
+
+  if (!match) return { qty: 1, unit: "pcs" };
+
+  let qty = Number(match[1]);
+  let unit = match[3] || "pcs";
+
+  // convert grams to kg
+  if (unit === "g") {
+    qty = qty / 1000;
+    unit = "kg";
+  }
+
+  return { qty, unit };
+};
   const printAdvanceBill = (bill) => {
     const printWindow = window.open("", "_blank");
     const total = bill.custom_price || bill.final_amount || bill.total_amount || 0;
@@ -322,11 +419,12 @@ export default function BillingPage() {
   const handleSelectBill = (bill) => {
     setSelectedBill(bill);
     setCart((bill.items || []).map((item) => ({
-      food_id: item.food_id,
-      name: item.name,
-      quantity: Number(item.quantity),
-      price: Number(item.price),
-    })));
+  food_id: item.food_id,
+  name: item.name,
+  quantity: Number(item.quantity),
+  price: Number(item.price),
+  isCustom: !!bill.custom_price,
+})));
     setShowPendingModal(false);
     setShowAlertModal(false);
   };
@@ -348,60 +446,165 @@ export default function BillingPage() {
         payment_mode: paymentMode,
       });
 
-      setSelectedBill(response.data);
-      setCart([]);
-      setShowPaymentModal(false);
-      setCashReceived(0);
+      // mark paid response
+const paidBill = response.data;
+
+// OPTIONAL: print before clearing
+setTimeout(() => printBill(paidBill), 300);
+
+// 🔥 RESET EVERYTHING
+setSelectedBill(null);
+setCart([]);
+setShowPaymentModal(false);
+setCashReceived(0);
+
+// reset customer
+setCustomerName("");
+setCustomerPhone("");
+setCustomerFound(false);
+setCustomerCredits(0);
+
+// reset financials
+setAdvanceAmount(0);
+setDiscount(0);
+setCredit(0);
+
+// reset order type
+setOrderType("normal");
+setCustomPrice(0);
+setScheduledTime("");
+setBulkNote("");
+
+// refresh bills
+await fetchBills();
       await fetchBills();
-      setTimeout(() => printBill(), 300);
     } catch (error) {
       console.error(error);
     }
   };
+const printBill = (billData) => {
+  const bill = billData || selectedBill;
+  if (!bill) return;
 
-  const printBill = () => {
-    if (!selectedBill) return;
-    const bill = selectedBill;
-    const final = Number(bill.custom_price || bill.final_amount || 0);
-    const paid = Number(bill.received_amount || 0);
-    const change = paid - final;
+  const subtotal = Number(bill.total_amount || 0);
+  const discount = Number(bill.discount_amount || 0);
+  const credit = Number(bill.credit_used || 0);
 
-    const printWindow = window.open("", "_blank");
-    printWindow.document.write(`
-      <html>
-      <head>
-        <title>Invoice #${bill.order_id}</title>
-        <style>
-          body { font-family: 'Courier New', monospace; width: 280px; margin: auto; padding: 20px; }
-          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-          .items { margin: 15px 0; }
-          .item { display: flex; justify-content: space-between; margin: 5px 0; }
-          .total { border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h2>${restaurantName}</h2>
-          <p>Invoice #${bill.order_id}</p>
-          <p>${new Date().toLocaleString()}</p>
-          ${bill.customer ? `<p>Customer: ${bill.customer.name || "Guest"}</p>` : ""}
-        </div>
-        <div class="items">
-          ${(bill.items || []).map(item => `<div class="item"><span>${item.name} x ${item.quantity}</span><span>₹${(item.price * item.quantity).toFixed(2)}</span></div>`).join("")}
-        </div>
-        <div class="total">
-          <div class="item"><strong>Total:</strong><strong>₹${final.toFixed(2)}</strong></div>
-          <div class="item"><span>Paid:</span><span>₹${paid.toFixed(2)}</span></div>
-          ${change > 0 ? `<div class="item"><span>Change:</span><span>₹${change.toFixed(2)}</span></div>` : ""}
-        </div>
-        <div class="footer">🙏 Thank You! Visit Again</div>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-  };
+  const final = Number(bill.custom_price || bill.final_amount || 0);
+
+  const advance = Number(bill.advance_paid || 0);   // ✅ IMPORTANT
+  const paidNow = Number(bill.received_amount || 0);
+
+  const totalPaid = advance + paidNow;              // ✅ TOTAL PAID
+  const change = totalPaid - final;
+
+  const printWindow = window.open("", "_blank");
+
+  printWindow.document.write(`
+  <html>
+  <head>
+    <title>Invoice</title>
+    <style>
+      body {
+        font-family: monospace;
+        width: 280px;
+        margin: auto;
+        padding: 10px;
+      }
+      h2, h3, p {
+        text-align: center;
+        margin: 4px 0;
+      }
+      .line {
+        border-top: 1px dashed #000;
+        margin: 8px 0;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+      }
+      .bold {
+        font-weight: bold;
+      }
+      .small {
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+
+    <h2>${restaurantName}</h2>
+    <p>Order #${bill.order_id}</p>
+    <p class="small">${new Date(bill.created_at).toLocaleString()}</p>
+
+    ${bill.customer ? `
+      <div class="line"></div>
+      <p><b>${bill.customer.name || "Guest"}</b></p>
+      <p class="small">${bill.customer.phone || ""}</p>
+    ` : ""}
+
+    <div class="line"></div>
+
+    ${(bill.items || []).map(item => `
+      <div class="row">
+        <span>
+  ${item.name} ${
+    bill.is_bulk ? `(${item.quantity} kg)` : `x ${item.quantity}`
+  }
+</span>
+        <span>₹${(item.price * item.quantity).toFixed(2)}</span>
+      </div>
+    `).join("")}
+
+    <div class="line"></div>
+
+    <div class="row"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+
+    ${discount > 0 ? `
+      <div class="row"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>
+    ` : ""}
+
+    ${credit > 0 ? `
+      <div class="row"><span>Credit Used</span><span>- ₹${credit.toFixed(2)}</span></div>
+    ` : ""}
+
+    <div class="line"></div>
+
+    <div class="row bold">
+      <span>Total</span>
+      <span>₹${final.toFixed(2)}</span>
+    </div>
+
+    <div class="line"></div>
+
+    ${advance > 0 ? `
+      <div class="row"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>
+    ` : ""}
+
+    <div class="row"><span>Paid Now</span><span>₹${paidNow.toFixed(2)}</span></div>
+
+    <div class="row bold">
+      <span>Total Paid</span>
+      <span>₹${totalPaid.toFixed(2)}</span>
+    </div>
+
+    <div class="row">
+      <span>Change</span>
+      <span>₹${change > 0 ? change.toFixed(2) : "0.00"}</span>
+    </div>
+
+    <div class="line"></div>
+
+    <p>🙏 Thank You! Visit Again</p>
+
+  </body>
+  </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.print();
+};
 
   const printKOT = () => {
     const kotWindow = window.open("", "_blank");
@@ -433,233 +636,337 @@ export default function BillingPage() {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col overflow-hidden">
-      {/* Header - Fixed Height */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-2.5 rounded-xl shadow-lg">
-            <Receipt size={22} />
+    <div className="h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
+      {/* --- TOP NAVIGATION BAR --- */}
+      <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-indigo-200 shadow-lg">
+              <ShoppingBag size={20} />
+            </div>
+            <div>
+              <h1 className="font-black text-xl tracking-tight text-slate-800 uppercase">POS</h1>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                <Clock size={10} /> {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">POS System</h1>
-            <p className="text-xs text-gray-500">{currentTime.toLocaleString()}</p>
-          </div>
+
+          <div className="h-8 w-[1px] bg-slate-200 mx-2" />
+
+          <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+  <Store size={16} className="text-indigo-500" />
+  <input 
+    className="bg-transparent font-bold text-sm outline-none w-32" 
+    value={restaurantName}
+    onChange={(e) => setRestaurantName(e.target.value)}
+  />
+
+  {/* ✅ ADD THIS BUTTON */}
+  <button
+    onClick={handleSaveRestaurantName}
+    className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-lg font-bold"
+  >
+    SAVE
+  </button>
+</div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
-            <Store size={16} className="text-indigo-600" />
+
+        <div className="flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl p-1.5">
+            <div className="p-1.5 bg-white rounded-lg shadow-sm">
+              <Mail size={14} className="text-indigo-500" />
+            </div>
             <input 
-              className="bg-transparent border-none text-sm font-medium focus:outline-none w-36 text-gray-700"
-              value={restaurantName}
-              onChange={(e) => setRestaurantName(e.target.value)}
-              onBlur={handleSaveRestaurantName}
-            />
+              className="bg-transparent text-xs font-semibold outline-none w-44 px-2"
+              placeholder="Report Sync Email"
+              value={adminEmail}
+onChange={(e) => setAdminEmail(e.target.value)}/>
+            <button 
+              onClick={handleSaveAdminEmail}
+              className="bg-slate-900 text-white text-[10px] px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-600 transition-colors"
+            >
+              SYNC
+            </button>
           </div>
-          
-          <button 
-            onClick={() => setShowAlertModal(true)} 
-            className="relative p-2 hover:bg-yellow-50 rounded-full transition-colors"
-          >
-            <AlertCircle size={20} className="text-yellow-600" />
-            {preOrderAlerts.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {preOrderAlerts.length}
-              </span>
-            )}
+         <button onClick={()=>navigate('/dashboard')}><PersonStandingIcon/></button>
+          <button onClick={() => setShowAlertModal(true)} className="p-3 hover:bg-slate-50 rounded-xl relative transition-colors">
+            <AlertCircle size={20} className="text-slate-400" />
+            {preOrderAlerts.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white" />}
           </button>
           
-          <button 
-            onClick={() => navigate("/dashboard")} 
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
-          >
-            <ClipboardList size={20} />
-          </button>
-          
-          <button 
-            onClick={() => navigate("/login")} 
-            className="p-2 hover:bg-red-50 rounded-full transition-colors text-red-500"
-          >
+          <button className="p-3 bg-slate-900 text-white rounded-xl hover:bg-indigo-600 transition-all">
             <LogOut size={20} />
           </button>
         </div>
       </header>
 
-      {/* Main Content - Takes remaining space with proper flex */}
-      <main className="flex flex-1 overflow-hidden p-4 gap-4 min-h-0">
-        {/* Categories Sidebar - Fixed Width */}
-        <aside className="w-72 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col flex-shrink-0 overflow-hidden">
-          <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white flex-shrink-0">
-            <h2 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Menu Categories</h2>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-semibold transition-all capitalize ${
-                  selectedCategory === cat 
-                    ? "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md" 
-                    : "text-gray-700 hover:bg-gray-50 hover:shadow-sm"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span>{cat}</span>
-                  {selectedCategory === cat && <ChevronRight size={16} />}
-                </div>
-              </button>
-            ))}
+      {/* --- MAIN INTERFACE --- */}
+      <main className="flex-1 flex overflow-hidden p-6 gap-6">
+        
+        {/* Sidebar: Categories */}
+        <aside className="w-60 flex flex-col gap-4">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4 px-2">
+              <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Menu Groups</h2>
+              <Filter size={14} className="text-slate-300" />
+            </div>
+            <nav className="flex flex-col gap-1">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    selectedCategory === cat 
+                    ? "bg-indigo-50 text-indigo-700" 
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                  }`}
+                >
+                  <span className="capitalize">{cat}</span>
+                  {selectedCategory === cat && <ChevronRight size={14} />}
+                </button>
+              ))}
+            </nav>
           </div>
         </aside>
 
-        {/* Menu Grid - Takes remaining space */}
-        <section className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden min-w-0">
-          <div className="p-5 border-b border-gray-100 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Search menu items..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+        {/* Center: Menu Grid */}
+        <section className="flex-1 flex flex-col gap-6 overflow-hidden">
+          {/* Search Header */}
+          <div className="relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
+            <input
+              type="text"
+              placeholder="Search dishes, drinks or snacks..."
+              className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-14 pr-6 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 transition-all font-medium text-slate-700 shadow-sm"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5">
+          {/* Grid */}
+          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
             {loading ? (
               <div className="h-full flex items-center justify-center">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                  <p className="text-gray-500">Loading menu...</p>
-                </div>
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredItems.map((item) => (
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    key={item.food_id}
-                    onClick={() => addToCart(item)}
-                    className="group bg-white p-4 rounded-xl border-2 border-gray-100 hover:border-indigo-300 hover:shadow-lg transition-all text-left"
-                  >
-                    <div className="w-12 h-12 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl flex items-center justify-center mb-3 group-hover:from-indigo-600 group-hover:to-indigo-700 transition-all">
-                      <Plus size={20} className="text-indigo-600 group-hover:text-white transition-all" />
-                    </div>
-                    <h3 className="font-bold text-gray-800 mb-1 truncate">{item.name}</h3>
-                    <p className="text-xs text-gray-400 mb-2 capitalize truncate">{item.category}</p>
-                    <p className="text-xl font-black text-indigo-600">₹{item.price}</p>
-                  </motion.button>
-                ))}
-              </div>
+              <motion.div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-10">
+{filteredItems.map((item) => {
+  const variantIndex = selectedVariants[item.food_id] ?? 0;
+const variant = item.variants?.[variantIndex];
+
+const displayPrice = variant?.price ?? item.price;
+
+  return (
+    <div key={item.food_id} className="bg-white border rounded-2xl p-4">
+      <h3 className="font-bold">
+  {item.name}
+  {variant && (
+    <span className="text-xs text-gray-500 ml-2">
+      ({variant.value} {variant.unit})
+    </span>
+  )}
+</h3>
+
+      {item.description && (
+        <p className="text-xs text-gray-500">{item.description}</p>
+      )}
+
+      {item.variants.length > 0 && (
+       <select
+  value={selectedVariants[item.food_id] ?? 0}
+  onChange={(e) => {
+    setSelectedVariants((prev) => ({
+      ...prev,
+      [item.food_id]: Number(e.target.value),
+    }));
+  }}
+>
+  {item.variants.map((v, i) => (
+    <option key={i} value={i}>
+      {v.value} {v.unit}
+    </option>
+  ))}
+</select>
+      )}
+
+      <div className="flex justify-between mt-3">
+        <span className="font-bold text-indigo-600">
+          ₹{displayPrice}
+        </span>
+
+        <button
+          onClick={() =>
+            addToCart({
+              ...item,
+              price: displayPrice,
+              variant_info: variant?.name || null,
+            })
+          }
+          className="bg-indigo-600 text-white px-3 py-1 rounded"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+})}
+              </motion.div>
             )}
           </div>
         </section>
 
-        {/* Right Panel - Fixed Width */}
-        <BillingRightPanel
-          cart={cart}
-          updateQty={updateQty}
-          setCart={setCart}
-          setSelectedBill={setSelectedBill}
-          subtotal={subtotal}
-          taxPercentage={taxPercentage}
-          tax={tax}
-          discount={discount}
-          advanceAmount={advanceAmount}
-          finalTotal={finalTotal}
-          selectedBill={selectedBill}
-          showTaxEditor={showTaxEditor}
-          setShowTaxEditor={setShowTaxEditor}
-          taxPercentageValue={taxPercentage}
-          setTaxPercentage={setTaxPercentage}
-          handleSaveTaxPercentage={handleSaveTaxPercentage}
-          handleGenerateBill={handleGenerateBill}
-          setShowPaymentModal={setShowPaymentModal}
-          printBill={printBill}
-          setShowPendingModal={setShowPendingModal}
-          printKOT={printKOT}
-          showCustomerDetails={showCustomerDetails}
-          setShowCustomerDetails={setShowCustomerDetails}
-          customerPhone={customerPhone}
-          setCustomerPhone={setCustomerPhone}
-          customerName={customerName}
-          setCustomerName={setCustomerName}
-          customerFound={customerFound}
-          customerCredits={customerCredits}
-          setDiscount={setDiscount}
-          credit={credit}
-          setCredit={setCredit}
-          customerCreditsValue={customerCredits}
-          orderType={orderType}
-          setOrderType={setOrderType}
-          scheduledTime={scheduledTime}
-          setScheduledTime={setScheduledTime}
-          bulkNote={bulkNote}
-          setBulkNote={setBulkNote}
-          customPrice={customPrice}
-          setCustomPrice={setCustomPrice}
-          setAdvanceAmount={setAdvanceAmount}
-          source={source}
-          setSource={setSource}
-          externalOrderId={externalOrderId}
-          setExternalOrderId={setExternalOrderId}
-          searchCustomer={searchCustomer}
-        />
+        {/* Right: Order Panel */}
+        <div className="w-96 flex flex-col">
+          <BillingRightPanel
+  cart={cart}
+  updateQty={updateQty}
+  setCart={setCart}
+  setSelectedBill={setSelectedBill}
+
+  subtotal={subtotal}
+  tax={tax}
+  taxPercentage={taxPercentage}
+  discount={discount}
+  setDiscount={setDiscount}
+  credit={credit}
+  setCredit={setCredit}
+  finalTotal={finalTotal}
+  advanceAmount={advanceAmount}
+
+  selectedBill={selectedBill}
+
+  showTaxEditor={showTaxEditor}
+  setShowTaxEditor={setShowTaxEditor}
+  taxPercentageValue={taxPercentage}
+  setTaxPercentage={setTaxPercentage}
+  handleSaveTaxPercentage={() => {
+    localStorage.setItem("tax_percentage", taxPercentage);
+    setShowTaxEditor(false);
+  }}
+
+  handleGenerateBill={handleGenerateBill}
+  setShowPaymentModal={setShowPaymentModal}
+
+  setShowPendingModal={setShowPendingModal}
+  printKOT={printKOT}
+  printBill={printBill}
+
+  showCustomerDetails={showCustomerDetails}
+  setShowCustomerDetails={setShowCustomerDetails}
+
+  customerPhone={customerPhone}
+  setCustomerPhone={setCustomerPhone}
+  customerName={customerName}
+  setCustomerName={setCustomerName}
+
+  customerFound={customerFound}
+  customerCredits={customerCredits}
+  customerCreditsValue={customerCredits}
+
+  orderType={orderType}
+  setOrderType={setOrderType}
+  scheduledTime={scheduledTime}
+  setScheduledTime={setScheduledTime}
+  bulkNote={bulkNote}
+  setBulkNote={setBulkNote}
+
+  customPrice={customPrice}
+  setCustomPrice={setCustomPrice}
+  setAdvanceAmount={setAdvanceAmount}
+
+  source={source}
+  setSource={setSource}
+  externalOrderId={externalOrderId}
+  setExternalOrderId={setExternalOrderId}
+
+ searchCustomer={searchCustomer}
+/>
+        </div>
       </main>
 
       {/* Modals */}
       <AnimatePresence>
-        {showPendingModal && (
-          <Modal title="Pending Orders" onClose={() => setShowPendingModal(false)}>
+        {showAlertModal && (
+          <Modal title="System Alerts" onClose={() => setShowAlertModal(false)}>
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Search by Order ID or Phone..."
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={pendingSearch}
-                onChange={(e) => setPendingSearch(e.target.value)}
-              />
-              <div className="max-h-96 overflow-y-auto space-y-2">
-                {savedBills.filter(b => b.status !== 'paid').filter(b => 
-                  b.order_id.toString().includes(pendingSearch) || 
-                  (b.phone && b.phone.includes(pendingSearch))
-                ).length === 0 ? (
-                  <p className="text-center py-8 text-gray-400">No pending orders found</p>
-                ) : (
-                  savedBills.filter(b => b.status !== 'paid').map((bill) => {
-                    const total = Number(bill.custom_price || bill.final_amount || bill.total_amount || 0);
-                    const advance = Number(bill.advance_paid || 0);
-                    const balance = total - advance;
-                    return (
-                      <div
-                        key={bill.order_id}
-                        onClick={() => handleSelectBill(bill)}
-                        className="p-4 border-2 border-gray-100 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-all"
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-gray-800">Order #{bill.order_id}</p>
-                            <p className="text-xs text-gray-500 mt-1">{new Date(bill.created_at).toLocaleString()}</p>
-                            {bill.customer?.name && (
-                              <p className="text-xs text-gray-600 mt-1">👤 {bill.customer.name}</p>
-                            )}
-                          </div>
-                          <p className="text-xl font-black text-indigo-600">₹{balance.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              {preOrderAlerts.length > 0 ? preOrderAlerts.map(alert => (
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl">
+                  <p className="text-sm font-bold text-amber-800">{alert.customer_name}</p>
+                  <p className="text-xs text-amber-600">Pending Advance: ₹{alert.remaining_amount}</p>
+                </div>
+              )) : (
+                <div className="text-center py-10 text-slate-400 font-medium">No alerts today</div>
+              )}
             </div>
           </Modal>
         )}
-      </AnimatePresence>
+     {showPendingModal && (
+  <Modal title="Pending Bills" onClose={() => setShowPendingModal(false)}>
+    
+    {/* 🔍 Search + Filter */}
+    <div className="flex gap-2 mb-4">
+      <input
+        type="text"
+        placeholder="Search order / name / phone..."
+        value={pendingSearch}
+        onChange={(e) => setPendingSearch(e.target.value)}
+        className="flex-1 border rounded-lg px-3 py-2 text-sm"
+      />
 
-      <AnimatePresence>
-        {showPaymentModal && selectedBill && (
+      <select
+        value={pendingFilter}
+        onChange={(e) => setPendingFilter(e.target.value)}
+        className="border rounded-lg px-2 py-2 text-sm"
+      >
+        <option value="all">All</option>
+        <option value="normal">Normal</option>
+        <option value="preorder">Preorder</option>
+        <option value="bulk">Bulk</option>
+      </select>
+    </div>
+
+    {/* 📋 Bills List */}
+    <div className="space-y-3">
+      {filteredPendingBills.length > 0 ? (
+        filteredPendingBills.map((bill) => (
+          <div
+            key={bill.order_id}
+            onClick={() => handleSelectBill(bill)}
+            className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl cursor-pointer hover:bg-yellow-100 transition"
+          >
+            <div className="flex justify-between items-center">
+              <p className="font-bold">Order #{bill.order_id}</p>
+
+              {/* Tag */}
+              <span className="text-xs px-2 py-1 rounded bg-yellow-200">
+                {bill.is_bulk
+                  ? "Bulk"
+                  : bill.is_advance
+                  ? "Preorder"
+                  : "Normal"}
+              </span>
+            </div>
+
+            <p className="text-sm font-semibold text-indigo-600">
+              ₹{bill.final_amount || bill.total_amount}
+            </p>
+
+            <p className="text-xs text-gray-500">
+              {bill.customer_name || "Guest"}
+            </p>
+          </div>
+        ))
+      ) : (
+        <div className="text-center text-gray-400 py-6">
+          No matching bills
+        </div>
+      )}
+    </div>
+  </Modal>
+)}
+         {showPaymentModal && selectedBill && (
           <Modal title="Payment Settlement" onClose={() => setShowPaymentModal(false)}>
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2">
@@ -711,65 +1018,29 @@ export default function BillingPage() {
           </Modal>
         )}
       </AnimatePresence>
-
-      <AnimatePresence>
-        {showAlertModal && (
-          <Modal title="Today's Pre-Orders" onClose={() => setShowAlertModal(false)}>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {preOrderAlerts.length === 0 ? (
-                <p className="text-center py-8 text-gray-400">No pre-orders for today</p>
-              ) : (
-                preOrderAlerts.map((o) => (
-                  <div key={o.id} className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-xl">
-                    <p className="font-bold text-gray-800">Order #{o.order_id}</p>
-                    <p className="text-sm text-gray-600 mt-1">👤 {o.customer?.name || "Guest"}</p>
-                    <p className="text-sm text-gray-600">📞 {o.customer?.phone || "-"}</p>
-                    <p className="text-sm text-gray-600">🕒 {new Date(o.scheduled_time).toLocaleString()}</p>
-                    <p className="text-red-600 font-bold mt-2">Balance: ₹{o.remaining_amount}</p>
-                    <button
-                      onClick={() => {
-                        handleSelectBill(o);
-                        setShowAlertModal(false);
-                      }}
-                      className="mt-3 w-full py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-                    >
-                      Open Order
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
 
-// Modal Component
 const Modal = ({ children, title, onClose }) => (
-  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+  <motion.div 
+    initial={{ opacity: 0 }} 
+    animate={{ opacity: 1 }} 
+    exit={{ opacity: 0 }}
+    className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-6"
+  >
     <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.95, opacity: 0 }}
-      className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+      initial={{ scale: 0.9, y: 20 }}
+      animate={{ scale: 1, y: 0 }}
+      className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden"
     >
-      <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0">
-        <h3 className="font-bold text-lg text-gray-800">{title}</h3>
-        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
+      <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <h3 className="font-black text-slate-800 uppercase tracking-tight">{title}</h3>
+        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
           <X size={20} />
         </button>
       </div>
-      <div className="p-5 max-h-[70vh] overflow-y-auto">
-        {children}
-      </div>
+      <div className="p-8 max-h-[80vh] overflow-y-auto">{children}</div>
     </motion.div>
-  </div>
-);
-
-const ChevronRight = ({ size = 20 }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="9 18 15 12 9 6"></polyline>
-  </svg>
+  </motion.div>
 );

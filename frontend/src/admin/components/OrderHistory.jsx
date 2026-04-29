@@ -23,15 +23,17 @@ const OrderHistory = () => {
     refund: 0,
     net: 0
   });
-const sendReport = async () => {
-  try {
-    await API.post('/send-report/');
-    alert("✅ Report sent successfully");
-  } catch (err) {
-    alert("❌ Failed to send report");
-    console.error(err);
-  }
-};
+
+  const sendReport = async () => {
+    try {
+      await API.post('/send-report/');
+      alert("✅ Report sent successfully");
+    } catch (err) {
+      alert("❌ Failed to send report");
+      console.error(err);
+    }
+  };
+
   // FETCH
   useEffect(() => {
     fetchOrders();
@@ -82,19 +84,52 @@ const sendReport = async () => {
     calculateSummary(result);
   };
 
-  // SUMMARY
+  // ✅ SUMMARY FIXED
   const calculateSummary = (list) => {
     let total = 0, food = 0, cafe = 0, refund = 0;
 
     list.forEach(o => {
       if (o.status === 'paid') {
-        total += parseFloat(o.total_amount || 0);
-        refund += parseFloat(o.refunded_amount || 0);
 
-        o.items.forEach(i => {
-          const amt = i.quantity * parseFloat(i.price);
-          i.category === 'cafe' ? cafe += amt : food += amt;
-        });
+        const orderAmount =
+          o.custom_price ?? o.final_amount ?? o.total_amount ?? 0;
+
+        total += Number(orderAmount);
+        refund += Number(o.refunded_amount || 0);
+
+        // 🔥 BULK / CUSTOM ORDER
+        if (o.custom_price) {
+          const totalQty = o.items.reduce(
+            (sum, i) => sum + Number(i.quantity || 0),
+            0
+          );
+
+          o.items.forEach(i => {
+            const share =
+              totalQty > 0
+                ? (Number(i.quantity || 0) / totalQty) * orderAmount
+                : 0;
+
+            if (i.category === 'cafe') {
+              cafe += share;
+            } else {
+              food += share;
+            }
+          });
+        }
+
+        // ✅ NORMAL ORDER
+        else {
+          o.items.forEach(i => {
+            const amt = Number(i.quantity) * Number(i.price);
+
+            if (i.category === 'cafe') {
+              cafe += amt;
+            } else {
+              food += amt;
+            }
+          });
+        }
       }
     });
 
@@ -128,8 +163,6 @@ const sendReport = async () => {
     }
   };
 
- 
-
   if (loading) return <div className="p-10 text-center">Loading...</div>;
   if (error) return <div className="text-red-500 text-center">{error}</div>;
 
@@ -145,11 +178,11 @@ const sendReport = async () => {
         </button>
 
         <button
-  onClick={sendReport}
-  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
->
-  Send Report
-</button>
+          onClick={sendReport}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Send Report
+        </button>
       </div>
 
       {/* FILTERS */}
@@ -207,7 +240,11 @@ const sendReport = async () => {
               <tr key={o.order_id} className="border-b">
                 <td className="p-3">#{o.order_id}</td>
                 <td>{o.customer_name || 'Walk-in'}</td>
-                <td>₹{format(o.total_amount)}</td>
+                <td>
+                  ₹{format(
+                    o.custom_price ?? o.final_amount ?? o.total_amount ?? 0
+                  )}
+                </td>
                 <td>{o.payment_mode}</td>
                 <td>{o.status}</td>
                 <td>{new Date(o.created_at).toLocaleDateString()}</td>

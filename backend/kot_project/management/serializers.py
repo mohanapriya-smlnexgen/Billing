@@ -1,6 +1,6 @@
 # backend/management/serializers.py
 from rest_framework import serializers
-from .models import FoodItem,RestaurantTable,SubCategory,TableSeat
+from .models import FoodItem, FoodVariant,RestaurantTable,SubCategory,TableSeat
 from rest_framework import serializers
 from .models import ReportSetting
 
@@ -31,27 +31,49 @@ class SubCategorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['subcategory_id', 'created_at', 'updated_at']
 
+from rest_framework import serializers
+from .models import FoodItem, FoodVariant
+
+class FoodVariantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FoodVariant
+        fields = ['unit', 'value', 'price']   # ❗ REMOVE food_item here
+
+
 class FoodItemSerializer(serializers.ModelSerializer):
-    subcategory_display = serializers.CharField(source='subcategory', read_only=True)
-    timing_display = serializers.ReadOnlyField()
-    has_timing = serializers.ReadOnlyField()
-    is_available_now = serializers.ReadOnlyField()
-    availability_status = serializers.ReadOnlyField()
-    
+    variants = FoodVariantSerializer(many=True, required=False)
+
     class Meta:
         model = FoodItem
-        fields = [
-            'food_id', 'category', 'subcategory', 'subcategory_display',
-            'food_type', 'food_name', 'price', 'description', 'image',
-            'stock_status', 'auto_manage_stock', 'stock_notes', 'last_stock_update',
-            'start_time', 'end_time', 'is_timing_active',
-            'timing_display', 'has_timing', 'is_available_now', 'availability_status',
-            'is_active', 'created_at', 'updated_at'
-        ]
-        read_only_fields = [
-            'food_id', 'created_at', 'updated_at', 'last_stock_update',
-            'timing_display', 'has_timing', 'is_available_now', 'availability_status'
-        ]
+        fields = '__all__'
+
+    def create(self, validated_data):
+        variants_data = validated_data.pop('variants', [])
+
+        # Create Food Item first
+        food = FoodItem.objects.create(**validated_data)
+
+        # Now attach variants
+        for variant in variants_data:
+            FoodVariant.objects.create(food_item=food, **variant)
+
+        return food
+    def update(self, instance, validated_data):
+        variants_data = validated_data.pop('variants', [])
+
+        # update main fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # clear old variants
+        instance.variants.all().delete()
+
+        # add new variants
+        for variant in variants_data:
+            FoodVariant.objects.create(food_item=instance, **variant)
+
+        return instance
         
 class TableSeatSerializer(serializers.ModelSerializer):
     class Meta:

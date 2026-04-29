@@ -207,7 +207,7 @@ const PreOrderHistory = () => {
                   key={o.id}
                   className="border-b hover:bg-gray-50 text-sm"
                 >
-                  <td className="p-3 font-medium">#{o.id}</td>
+                 <td className="p-3 font-medium">#{o.order_id}</td>
 
                   <td className="p-3">
                     {o.customer?.name || "Guest"}

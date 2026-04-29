@@ -20,3 +20,12 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = '__all__'
+# serializers.py
+
+class CustomerSerializer(serializers.ModelSerializer):
+    # This reads the annotation we added in the ViewSet get_queryset
+    order_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Customer
+        fields = ['id', 'name', 'phone', 'credits', 'order_count']
