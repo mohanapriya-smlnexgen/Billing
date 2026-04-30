@@ -43,7 +43,7 @@ const BILL_API = `${BASE_URL}/cashier-orders/`;
 const SETTING_API = `${BASE_URL}/restaurant-setting/`;
 
 const Modal = ({ children, title, onClose }) => (
-  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-1">
     <motion.div
       initial={{ scale: 0.9, opacity: 0, y: 20 }}
       animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -52,7 +52,7 @@ const Modal = ({ children, title, onClose }) => (
       className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden"
     >
       {/* Header */}
-      <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-white">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-white">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
             <Bell size={22} className="text-indigo-600" />
@@ -71,7 +71,7 @@ const Modal = ({ children, title, onClose }) => (
       </div>
 
       {/* Content */}
-      <div className="p-6 max-h-[70vh] overflow-y-auto">
+      <div className="p-2 max-h-[70vh] overflow-y-auto">
         {children}
       </div>
     </motion.div>
@@ -483,14 +483,14 @@ export default function BillingPage() {
     }
   }, [subtotal]);
 
-  const tax = subtotal * (taxPercentage / 100);
-  const total = subtotal + tax;
-  const computedTotal = total - discount - credit;
-  const finalTotal = Number(
-    orderType !== "normal" && customPrice > 0
-      ? customPrice
-      : Math.max(computedTotal, 0)
-  );
+ const tax = subtotal * (taxPercentage / 100);
+const subtotalAfterDiscount = subtotal - discount;           // ← Important
+const computedTotal = subtotalAfterDiscount + tax - credit;  // ← Fixed order
+const finalTotal = Number(
+  orderType !== "normal" && customPrice > 0
+    ? customPrice
+    : Math.max(computedTotal, 0)
+);
   const dueAmount = (selectedBill?.custom_price || selectedBill?.final_amount || finalTotal) - (selectedBill?.advance_paid || selectedBill?.received_amount || 0);
   const balance = cashReceived - dueAmount;
 
@@ -509,6 +509,7 @@ export default function BillingPage() {
         final_amount: finalTotal,
         discount_amount: discount,
         credit_used: credit,
+        discount: discount,
         name: customerName,
         phone: customerPhone,
         is_bulk: orderType === "bulk",
@@ -570,53 +571,88 @@ export default function BillingPage() {
 
     return { qty, unit };
   };
-  const printAdvanceBill = (bill) => {
-    const printWindow = window.open("", "_blank");
-    const total = bill.custom_price || bill.final_amount || bill.total_amount || 0;
-    const advance = bill.advance_paid || bill.received_amount || 0;
-    const balance = bill.remaining_amount !== undefined ? bill.remaining_amount : total - advance;
+const printAdvanceBill = (bill) => {
+  const printWindow = window.open("", "_blank");
+  const subtotal = Number(bill.total_amount || bill.custom_price || 0);
+  const tax = subtotal * (taxPercentage / 100);
+  const discount = Number(bill.discount_amount || 0);
+  const total = subtotal - discount + tax;
 
-    printWindow.document.write(`
-      <html>
-      <head>
-        <title>Order #${bill.order_id}</title>
-        <style>
-          body { font-family: 'Courier New', monospace; width: 280px; margin: auto; padding: 20px; }
-          .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
-          .items { margin: 15px 0; }
-          .item { display: flex; justify-content: space-between; margin: 5px 0; }
-          .total { border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; }
-          .text-center { text-align: center; }
-          .warning { color: #ff6b6b; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h3>${restaurantName}</h3>
-          <p>Order #${bill.order_id}</p>
-          <p>${new Date().toLocaleString()}</p>
-        </div>
-        <div class="items">
-          ${(bill.items || [])
-        .map(
-          (i) =>
-            `<div class="item"><span>${i.name}</span><span>${bill.is_bulk ? "Qty: " + i.quantity : "₹" + i.price * i.quantity
-            }</span></div>`
-        )
-        .join("")}
-        </div>
-        <div class="total">
-          <div class="item"><strong>Total:</strong><strong>₹${total}</strong></div>
-          <div class="item"><span>Advance Paid:</span><span>₹${advance}</span></div>
-          <div class="item"><span>Balance:</span><span>₹${balance}</span></div>
-        </div>
-        <div class="text-center warning">⚠ Pending Order - Please Pay Balance</div>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-  };
+  const advance = Number(bill.advance_paid || bill.received_amount || 0);
+  const balance = total - advance;
+
+  printWindow.document.write(`
+    <html>
+    <head>
+      <title>Order #${bill.order_id}</title>
+      <style>
+        body { 
+          font-family: 'Courier New', monospace; 
+          width: 300px; 
+          margin: auto; 
+          padding: 20px; 
+          line-height: 1.4;
+        }
+        .header { 
+          text-align: center; 
+          border-bottom: 2px dashed #000; 
+          padding-bottom: 10px; 
+          margin-bottom: 15px; 
+        }
+        .item { 
+          display: flex; 
+          justify-content: space-between; 
+          margin: 6px 0; 
+        }
+        .total-line { 
+          border-top: 2px dashed #000; 
+          margin: 12px 0 8px 0; 
+          padding-top: 8px; 
+        }
+        .discount { color: #22c55e; font-weight: bold; }
+        .warning { 
+          color: #ef4444; 
+          font-weight: bold; 
+          text-align: center; 
+          margin-top: 15px; 
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h3>${restaurantName}</h3>
+        <p>Order #${bill.order_id}</p>
+        <p>${new Date().toLocaleString()}</p>
+      </div>
+
+      <div>
+        ${(bill.items || []).map((i) => `
+          <div class="item">
+            <span>${i.name}</span>
+            <span>₹${(i.price * i.quantity).toFixed(2)}</span>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="total-line"></div>
+
+      <div class="item"><strong>Total</strong><strong>₹${subtotal.toFixed(2)}</strong></div>
+      ${discount > 0 ? `<div class="item discount"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>` : ""}
+      <div class="item"><span>Tax</span><span>₹${tax.toFixed(2)}</span></div>
+      <div class="item"><span>Grand Total</span><span>₹${total.toFixed(2)}</span></div>
+      <div class="item"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>
+      <div class="item"><strong>Balance</strong><strong>₹${balance.toFixed(2)}</strong></div>
+
+      <div class="warning">
+        ⚠ Pending Order - Please Pay Balance
+      </div>
+    </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.print();
+};
 
   const handleSelectBill = (bill) => {
     setSelectedBill(bill);
@@ -682,129 +718,81 @@ export default function BillingPage() {
       console.error(error);
     }
   };
-  const printBill = (billData) => {
-    const bill = billData || selectedBill;
-    if (!bill) return;
+ const printBill = (billData) => {
+  const bill = billData || selectedBill;
+  if (!bill) return;
 
-    const subtotal = Number(bill.total_amount || 0);
-    const discount = Number(bill.discount_amount || 0);
-    const credit = Number(bill.credit_used || 0);
+  const subtotal = Number(bill.total_amount || bill.customer_price || 0);
+  const discount = Number(bill.discount_amount || 0);
+  const tax = subtotal * (taxPercentage / 100);
+  const credit = Number(bill.credit_used || 0);
+  const final = subtotal - discount + tax;
+  const advance = Number(bill.advance_paid || 0);
+  const paidNow = Number(bill.received_amount || 0);
+  const totalPaid = advance + paidNow;
+  const change = totalPaid - final;
 
-    const final = Number(bill.custom_price || bill.final_amount || 0);
+  const printWindow = window.open("", "_blank");
 
-    const advance = Number(bill.advance_paid || 0);   // ✅ IMPORTANT
-    const paidNow = Number(bill.received_amount || 0);
-
-    const totalPaid = advance + paidNow;              // ✅ TOTAL PAID
-    const change = totalPaid - final;
-
-    const printWindow = window.open("", "_blank");
-
-    printWindow.document.write(`
-  <html>
-  <head>
-    <title>Invoice</title>
-    <style>
-      body {
-        font-family: monospace;
-        width: 280px;
-        margin: auto;
-        padding: 10px;
-      }
-      h2, h3, p {
-        text-align: center;
-        margin: 4px 0;
-      }
-      .line {
-        border-top: 1px dashed #000;
-        margin: 8px 0;
-      }
-      .row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 13px;
-      }
-      .bold {
-        font-weight: bold;
-      }
-      .small {
-        font-size: 11px;
-      }
-    </style>
-  </head>
-  <body>
-
-    <h2>${restaurantName}</h2>
-    <p>Order #${bill.order_id}</p>
-    <p class="small">${new Date(bill.created_at).toLocaleString()}</p>
-
-    ${bill.customer ? `
-      <div class="line"></div>
-      <p><b>${bill.customer.name || "Guest"}</b></p>
-      <p class="small">${bill.customer.phone || ""}</p>
-    ` : ""}
-
-    <div class="line"></div>
-
-    ${(bill.items || []).map(item => `
-      <div class="row">
-        <span>
-  ${item.name} ${bill.is_bulk ? `(${item.quantity} kg)` : `x ${item.quantity}`
-      }
-</span>
-        <span>₹${(item.price * item.quantity).toFixed(2)}</span>
+  printWindow.document.write(`
+    <html>
+    <head>
+      <title>Invoice #${bill.order_id}</title>
+      <style>
+        body { 
+          font-family: 'Courier New', monospace; 
+          width: 300px; 
+          margin: auto; 
+          padding: 15px; 
+        }
+        .center { text-align: center; }
+        .row { display: flex; justify-content: space-between; margin: 4px 0; }
+        .bold { font-weight: bold; }
+        .line { border-top: 1px dashed #000; margin: 10px 0; }
+        .discount { color: #22c55e; }
+      </style>
+    </head>
+    <body>
+      <div class="center">
+        <h2>${restaurantName}</h2>
+        <p>Order #${bill.order_id}</p>
+        <p class="small">${new Date(bill.created_at).toLocaleString()}</p>
       </div>
-    `).join("")}
 
-    <div class="line"></div>
+      <div class="line"></div>
 
-    <div class="row"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+      ${(bill.items || []).map(item => `
+        <div class="row">
+          <span>${item.name} ${item.variant_info ? ` (${item.variant_info.replace("_", " ")})` : ""} </span>
+          <span>₹${(item.price * item.quantity).toFixed(2)}</span>
+        </div>
+      `).join("")}
 
-    ${discount > 0 ? `
-      <div class="row"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>
-    ` : ""}
+      <div class="line"></div>
 
-    ${credit > 0 ? `
-      <div class="row"><span>Credit Used</span><span>- ₹${credit.toFixed(2)}</span></div>
-    ` : ""}
+      <div class="row"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+      <div class="row"><span>Tax</span><span>₹${tax.toFixed(2)}</span></div>
+      ${discount > 0 ? `<div class="row discount"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>` : ""}
+      ${credit > 0 ? `<div class="row"><span>Credit Used</span><span>- ₹${credit.toFixed(2)}</span></div>` : ""}
+      
+      <div class="line"></div>
+      
+      <div class="row bold"><span>Total</span><span>₹${final.toFixed(2)}</span></div>
 
-    <div class="line"></div>
+      ${advance > 0 ? `<div class="row"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>` : ""}
+      <div class="row"><span>Paid Now</span><span>₹${paidNow.toFixed(2)}</span></div>
+      <div class="row bold"><span>Total Paid</span><span>₹${totalPaid.toFixed(2)}</span></div>
+      ${change > 0 ? `<div class="row"><span>Change</span><span>₹${change.toFixed(2)}</span></div>` : ""}
 
-    <div class="row bold">
-      <span>Total</span>
-      <span>₹${final.toFixed(2)}</span>
-    </div>
-
-    <div class="line"></div>
-
-    ${advance > 0 ? `
-      <div class="row"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>
-    ` : ""}
-
-    <div class="row"><span>Paid Now</span><span>₹${paidNow.toFixed(2)}</span></div>
-
-    <div class="row bold">
-      <span>Total Paid</span>
-      <span>₹${totalPaid.toFixed(2)}</span>
-    </div>
-
-    <div class="row">
-      <span>Change</span>
-      <span>₹${change > 0 ? change.toFixed(2) : "0.00"}</span>
-    </div>
-
-    <div class="line"></div>
-
-    <p>🙏 Thank You! Visit Again</p>
-
-  </body>
-  </html>
+      <div class="line"></div>
+      <p class="center">🙏 Thank You! Visit Again</p>
+    </body>
+    </html>
   `);
 
-    printWindow.document.close();
-    printWindow.print();
-  };
-
+  printWindow.document.close();
+  printWindow.print();
+};
   const printKOT = () => {
     const kotWindow = window.open("", "_blank");
     kotWindow.document.write(`
@@ -837,7 +825,7 @@ export default function BillingPage() {
   return (
     <div className="h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
       {/* --- TOP NAVIGATION BAR --- */}
-      <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
+      <header className="h-15 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-indigo-200 shadow-lg">
@@ -938,14 +926,14 @@ export default function BillingPage() {
       </header>
 
       {/* --- MAIN INTERFACE --- */}
-      <main className="flex-1 flex overflow-hidden p-6 gap-6">
+      <main className="flex-1 flex overflow-hidden p-2 gap-2">
 
         {/* Sidebar: Categories */}
-        <aside className="w-60 flex flex-col gap-4">
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4 px-2">
-              <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Menu Groups</h2>
-              <Filter size={14} className="text-slate-300" />
+        <aside className="w-40 flex flex-col gap-4">
+          <div className="bg-gray-100 h-full rounded p-3 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Menu Groups</h2>
+              
             </div>
             <nav className="flex flex-col gap-1">
               {categories.map((cat) => (
@@ -966,14 +954,14 @@ export default function BillingPage() {
         </aside>
 
         {/* Center: Menu Grid */}
-        <section className="flex-1 flex flex-col gap-6 overflow-hidden">
+        <section className="flex-1 flex flex-col gap-3 overflow-hidden">
           {/* Search Header */}
           <div className="relative group">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
             <input
               type="text"
               placeholder="Search dishes, drinks or snacks..."
-              className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-14 pr-6 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 transition-all font-medium text-slate-700 shadow-sm"
+              className="w-full h-10 bg-white border border-slate-200 rounded-2xl py-4 pl-14 pr-6 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 transition-all font-medium text-slate-700 shadow-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -995,24 +983,16 @@ export default function BillingPage() {
     return (
       <div
         key={item.food_id}
-        className="bg-white border rounded-2xl p-4 h-full flex flex-col justify-between"
+        className="bg-white border rounded-xl p-3 h-full flex flex-col justify-between"
       >
         {/* TOP CONTENT */}
-        <div>
+        <div className="gap-1">
           <h3 className="font-bold">
             {item.name}
-            {variant && (
-              <span className="text-xs text-gray-500 ml-2">
-                ({variant.value} {variant.unit})
-              </span>
-            )}
-          </h3>
-
-          {/* FIXED HEIGHT VARIANT */}
-          <div className="mt-2 min-h-[20px]">
+        
             {item.variants.length > 0 && (
               <select
-                className="w-full border rounded px-2 py-1 text-sm"
+                className="w-100 border rounded px-2 py-1 text-sm"
                 value={selectedVariants[item.food_id] ?? 0}
                 onChange={(e) => {
                   setSelectedVariants((prev) => ({
@@ -1028,11 +1008,15 @@ export default function BillingPage() {
                 ))}
               </select>
             )}
-          </div>
+          
+          </h3>
+
+          {/* FIXED HEIGHT VARIANT */}
+          
         </div>
 
         {/* BOTTOM (ALWAYS SAME POSITION) */}
-        <div className="flex justify-between items-center mt-4">
+        <div className="flex justify-between items-center mt-3">
           <span className="font-bold text-indigo-600">
             ₹{displayPrice}
           </span>
@@ -1047,7 +1031,7 @@ export default function BillingPage() {
                   : "default",
               })
             }
-            className="bg-indigo-600 text-white px-3 py-1 rounded"
+            className="bg-indigo-600 text-white px-2 py-1 rounded text-sm" 
           >
             Add
           </button>
@@ -1131,494 +1115,439 @@ export default function BillingPage() {
 
       {/* ==================== ALERT MODAL WITH SEARCH & DATE FILTER ==================== */}
       <AnimatePresence>
-        {showAlertModal && (
-          <Modal
-            title="Today's Orders & Notifications"
-            onClose={() => {
-              setShowAlertModal(false);
-              setSearchTerm("");
-              setDateFilter("");
-            }}
+{showAlertModal && (
+  <Modal
+    title="Today's Orders & Notifications"
+    onClose={() => {
+      setShowAlertModal(false);
+      setSearchTerm("");
+      setDateFilter("");
+    }}
+  >
+    <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 bg-white sticky top-0 z-10">
+        {[
+          { key: "all", label: "All Orders" },
+          { key: "normal", label: "Regular" },
+          { key: "preorder", label: "Pre Orders" },
+          { key: "bulk", label: "Bulk Orders" },
+        ].map((tab) => {
+          const unreadCount = getUnreadCountForTab(tab.key);
+          return (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setActiveAlertTab(tab.key);
+                setSearchTerm("");
+                setDateFilter("");
+              }}
+              className={`flex-1 py-4 text-sm font-semibold transition-all relative border-b-2 ${
+                activeAlertTab === tab.key
+                  ? "text-indigo-600 border-indigo-600"
+                  : "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              {tab.label}
+              {unreadCount > 0 && (
+                <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Top Controls: Search + Date + Mark All Read */}
+      <div className="flex flex-wrap gap-4 items-center justify-between">
+        {/* Search and Date Filter in same line */}
+        <div className="flex flex-1 gap-4 items-center">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search by Order ID, Name or Phone..."
+              className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          {/* Date Filter */}
+          <div className="relative w-56">
+            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="date"
+              className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Mark All as Read Button - Top Right */}
+        {filteredOrders.length > 0 && (
+          <button
+            onClick={markAllAsRead}
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-gray-300 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 text-gray-700 rounded-2xl font-medium transition-all flex-shrink-0"
           >
-            <div className="space-y-6">
-              {/* Tabs with Unread Counts */}
-              <div className="flex border-b border-gray-200">
-                {[
-                  { key: "all", label: "All Orders" },
-                  { key: "normal", label: "Regular Orders" },
-                  { key: "preorder", label: "Pre Orders" },
-                  { key: "bulk", label: "Bulk Orders" },
-                ].map((tab) => {
-                  const unreadCount = getUnreadCountForTab(tab.key);
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => {
-                        setActiveAlertTab(tab.key);
-                        setSearchTerm("");
-                        setDateFilter("");
-                      }}
-                      className={`flex-1 py-4 text-base font-semibold transition-all relative ${activeAlertTab === tab.key
-                        ? "text-indigo-600 border-b-2 border-indigo-600"
-                        : "text-gray-500 hover:text-gray-700"
-                        }`}
-                    >
-                      {tab.label}
-                      {unreadCount > 0 && (
-                        <span className="ml-2 bg-red-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Search and Filter Bar */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                {/* Search Input */}
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Search by Order ID, Customer Name, or Phone..."
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-
-                {/* Date Filter */}
-                <div className="flex gap-3 items-center">
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <input
-                      type="date"
-                      className="pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
-                      value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value)}
-                    />
-                  </div>
-
-                  {(searchTerm || dateFilter) && (
-                    <button
-                      onClick={() => {
-                        setSearchTerm('');
-                        setDateFilter('');
-                      }}
-                      className="px-3 py-2.5 text-sm text-red-600 hover:text-red-700 font-semibold rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                      Clear Filters
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Filter Stats */}
-              {(searchTerm || dateFilter) && filteredOrders.length !== preOrderAlerts.filter(o => {
-                if (activeAlertTab === "all") return true;
-                if (activeAlertTab === "preorder") return o.is_advance === true;
-                if (activeAlertTab === "bulk") return o.is_bulk === true;
-                if (activeAlertTab === "normal") return !o.is_advance && !o.is_bulk;
-                return true;
-              }).length && (
-                  <div className="flex justify-between items-center text-sm bg-blue-50 p-3 rounded-lg">
-                    <div className="text-blue-700">
-                      🔍 Filtered results: {filteredOrders.length} orders
-                      {searchTerm && ` matching "${searchTerm}"`}
-                      {dateFilter && ` on ${new Date(dateFilter).toLocaleDateString()}`}
-                    </div>
-                  </div>
-                )}
-
-              {/* Mark All as Read Button */}
-              {filteredOrders.length > 0 && (
-                <div className="flex justify-end">
-                  <button
-                    onClick={markAllAsRead}
-                    className="text-sm text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-all"
-                  >
-                    <CheckCircle size={16} />
-                    Mark all as read
-                  </button>
-                </div>
-              )}
-
-              {/* Orders Table */}
-              <div className="max-h-[500px] overflow-auto">
-                {filteredOrders.length === 0 ? (
-                  <div className="text-center py-16">
-                    <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Bell size={48} className="text-gray-400" />
-                    </div>
-                    <p className="text-gray-500 text-lg">No orders found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      {searchTerm || dateFilter
-                        ? "Try adjusting your search or filter criteria"
-                        : "New orders will appear here"}
-                    </p>
-                  </div>
-                ) : (
-                  <table className="w-full">
-                    {/* Table Header */}
-                    <thead className="bg-gray-50 sticky top-0 z-10">
-                      <tr className="border-b-2 border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Order ID</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Customer</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Date/Time</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Due</th>
-                        <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
-                        <th className="text-center py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
-                      </tr>
-                    </thead>
-
-                    {/* Table Body */}
-                    <tbody>
-                      {filteredOrders.map((o) => {
-                        const isPreOrder = o.is_advance === true;
-                        const isBulk = o.is_bulk === true;
-                        const total = Number(o.final_amount || o.total_amount || 0);
-                        const advance = Number(o.advance_paid || 0);
-                        const received = Number(o.received_amount || 0);
-                        const balance = total - (advance || received);
-                        const isRead = readNotifications.includes(o.order_id);
-                        const displayTime = o.scheduled_time || o.created_at;
-                        const timeLabel = o.scheduled_time ? '📅 Scheduled' : '🕒 Ordered';
-
-                        return (
-                          <tr
-                            key={o.order_id}
-                            className={`border-b border-gray-100 hover:bg-gray-50 transition-all ${!isRead ? "bg-red-50/30" : ""
-                              }`}
-                          >
-                            {/* Order ID */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-indigo-600">#{o.order_id}</span>
-                                {!isRead && (
-                                  <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full animate-pulse">
-                                    New
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Customer */}
-                            <td className="py-3 px-4">
-                              <div>
-                                <div className="font-medium text-gray-800">{o.customer?.name || "Guest"}</div>
-                                <div className="text-xs text-gray-500">{o.customer?.phone || "-"}</div>
-                              </div>
-                            </td>
-
-                            {/* Order Type */}
-                            <td className="py-3 px-4">
-                              {isPreOrder && (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-blue-100 text-blue-700 rounded-full">
-                                  🎯 Pre-Order
-                                </span>
-                              )}
-                              {isBulk && (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-purple-100 text-purple-700 rounded-full">
-                                  📦 Bulk
-                                </span>
-                              )}
-                              {!isPreOrder && !isBulk && (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-green-100 text-green-700 rounded-full">
-                                  ✅ Regular
-                                </span>
-                              )}
-                              {advance > 0 && (
-                                <div className="text-xs text-orange-600 mt-1">
-                                  Advance: ₹{advance}
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Date/Time */}
-                            <td className="py-3 px-4">
-                              <div className="text-sm">
-                                <div className="text-gray-600">{timeLabel}</div>
-                                <div className="text-xs text-gray-500">
-                                  {new Date(displayTime).toLocaleString()}
-                                </div>
-                              </div>
-                              {o.source && o.source !== 'offline' && (
-                                <div className="text-xs text-gray-400 mt-1">
-                                  📱 {o.source}
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Total */}
-                            <td className="py-3 px-4 text-right">
-                              <span className="font-bold text-gray-800">₹{total}</span>
-                            </td>
-
-                            {/* Due */}
-                            <td className="py-3 px-4 text-right">
-                              <span className={`font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                ₹{Math.max(balance, 0)}
-                              </span>
-                            </td>
-
-                            {/* Status */}
-                            <td className="py-3 px-4 text-center">
-                              {o.status === 'paid' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-green-100 text-green-700 rounded-full">
-                                  ✓ Paid
-                                </span>
-                              ) : o.status === 'advance_paid' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-yellow-100 text-yellow-700 rounded-full">
-                                  ⏳ Advance
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-orange-100 text-orange-700 rounded-full">
-                                  ⏰ Pending
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Actions */}
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => markAsRead(o.order_id)}
-                                  className="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-white"
-                                  title="Mark as read"
-                                >
-                                  <CheckCircle size={16} />
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleSelectBill(o);
-                                    if (!readNotifications.includes(o.order_id)) {
-                                      markAsRead(o.order_id);
-                                    }
-                                    setShowAlertModal(false);
-                                  }}
-                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm transition-all"
-                                >
-                                  Open
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Summary Footer */}
-              {filteredOrders.length > 0 && (
-                <div className="border-t border-gray-200 pt-4 flex justify-between items-center">
-                  <div className="text-sm text-gray-600">
-                    Total Orders: <span className="font-bold text-gray-800">{filteredOrders.length}</span>
-                    {preOrderAlerts.length !== filteredOrders.length && (
-                      <span className="text-gray-400 ml-2">
-                        (of {preOrderAlerts.filter(o => {
-                          if (activeAlertTab === "all") return true;
-                          if (activeAlertTab === "preorder") return o.is_advance === true;
-                          if (activeAlertTab === "bulk") return o.is_bulk === true;
-                          if (activeAlertTab === "normal") return !o.is_advance && !o.is_bulk;
-                          return true;
-                        }).length} total)
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    Unread: <span className="font-bold text-red-600">{filteredOrders.filter(o => !readNotifications.includes(o.order_id)).length}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Modal>
+            <CheckCircle size={18} />
+            <span>Mark all as read</span>
+          </button>
         )}
+      </div>
+
+      {/* Clear Filters Button (shown only when filters are active) */}
+      {(searchTerm || dateFilter) && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setDateFilter('');
+            }}
+            className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center gap-1"
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+
+      {/* Results Summary */}
+      {(searchTerm || dateFilter) && (
+        <div className="bg-blue-50 border border-blue-100 px-5 py-3 rounded-2xl text-blue-700 text-sm">
+          Showing {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''}
+          {searchTerm && ` for "${searchTerm}"`}
+          {dateFilter && ` on ${new Date(dateFilter).toLocaleDateString()}`}
+        </div>
+      )}
+
+      {/* Orders Table */}
+      <div className="max-h-[460px] overflow-auto border border-gray-200 rounded-2xl overflow-hidden">
+        {filteredOrders.length === 0 ? (
+          <div className="text-center py-20 bg-gray-50 rounded-2xl">
+            <Bell size={60} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-500 text-lg">No orders found</p>
+            <p className="text-gray-400 text-sm mt-1">
+              {searchTerm || dateFilter ? "Try different filters" : "No orders for today"}
+            </p>
+          </div>
+        ) : (
+          <table className="w-full min-w-full table-auto">
+            <thead className="bg-gray-50 sticky top-0 z-20">
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-600">ORDER ID</th>
+                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-600">CUSTOMER</th>
+                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-600">TYPE</th>
+                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-600">TIME</th>
+                <th className="text-right py-4 px-6 text-xs font-semibold text-gray-600">TOTAL</th>
+                {/* <th className="text-right py-4 px-6 text-xs font-semibold text-gray-600">DUE</th> */}
+                <th className="text-center py-4 px-6 text-xs font-semibold text-gray-600">STATUS</th>
+                <th className="text-center py-4 px-6 text-xs font-semibold text-gray-600">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredOrders.map((o) => {
+                const isPreOrder = o.is_advance === true;
+                const isBulk = o.is_bulk === true;
+                const total = Number(o.final_amount || o.total_amount || 0);
+                const advance = Number(o.advance_paid || 0);
+                const received = Number(o.received_amount || 0);
+                const balance = total - (advance + received);
+                const isRead = readNotifications.includes(o.order_id);
+                const displayTime = o.scheduled_time || o.created_at;
+
+                return (
+                  <tr
+                    key={o.order_id}
+                    className={`hover:bg-gray-50 transition-all ${!isRead ? 'bg-red-50/50' : ''}`}
+                  >
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-indigo-600">#{o.order_id}</span>
+                        {!isRead && <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded">NEW</span>}
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-6">
+                      <div>
+                        <div className="font-medium">{o.customer?.name || "Guest"}</div>
+                        <div className="text-xs text-gray-500">{o.customer?.phone || "—"}</div>
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-6">
+                      <div className="flex flex-wrap gap-2">
+                        {isPreOrder && <span className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">Pre-Order</span>}
+                        {isBulk && <span className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">Bulk</span>}
+                        {!isPreOrder && !isBulk && <span className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-full">Normal</span>}
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-6 text-sm text-gray-600">
+                      {new Date(displayTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+
+                    <td className="py-4 px-6 text-right font-semibold">₹{total}</td>
+
+                    {/* <td className="py-4 px-6 text-right">
+                      <span className={`font-semibold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        ₹{Math.max(balance, 0)}
+                      </span>
+                    </td> */}
+
+                    <td className="py-4 px-3 text-center">
+                      {o.status === 'paid' ? (
+                        <span className="px-4 py-1 text-xs bg-green-100 text-green-700 rounded-full font-medium">Paid</span>
+                      ) : o.status === 'advance_paid' ? (
+                        <span className="px-4 py-1 text-xs bg-amber-100 text-amber-700 rounded-full font-medium">Advance</span>
+                      ) : (
+                        <span className="px-4 py-1 text-xs bg-orange-100 text-orange-700 rounded-full font-medium">Pending</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 px-6 text-center">
+                      <button
+                        onClick={() => {
+                          handleSelectBill(o);
+                          if (!isRead) markAsRead(o.order_id);
+                          setShowAlertModal(false);
+                        }}
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-xl transition"
+                      >
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Footer Summary */}
+      {filteredOrders.length > 0 && (
+        <div className="flex justify-between text-sm text-gray-600 pt-2">
+          <div>Total: <span className="font-semibold text-gray-900">{filteredOrders.length}</span> orders</div>
+          <div>Unread: <span className="font-semibold text-red-600">
+            {filteredOrders.filter(o => !readNotifications.includes(o.order_id)).length}
+          </span></div>
+        </div>
+      )}
+    </div>
+  </Modal>
+)}
       </AnimatePresence>
 
-      {showPendingModal && (
-        <Modal title="Pending Bills" onClose={() => setShowPendingModal(false)}>
+{showPendingModal && (
+  <Modal title="Pending Bills" onClose={() => setShowPendingModal(false)}>
+    <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+        <input
+          type="text"
+          placeholder="Search by Order ID, Customer Name or Phone..."
+          className="w-full pl-12 py-3.5 h-10 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-base"
+          value={pendingSearch}
+          onChange={(e) => setPendingSearch(e.target.value)}
+        />
+      </div>
 
-          {/* 🔍 Search + Filter */}
+      {/* Orders Grid - 3 cards per row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto pr-2">
+        {filteredPendingOrders.length === 0 ? (
+          <div className="col-span-3 text-center py-16 text-gray-400">
+            <Clock size={48} className="mx-auto mb-4" />
+            <p className="text-lg">No pending orders found</p>
+          </div>
+        ) : (
+          filteredPendingOrders.map((b) => {
+            const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
+            const paid = Number(b.received_amount || b.advance_paid || 0);
+            const due = total - paid;
 
-          <div className="space-y-4">
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Search by Order ID, Customer Name, or Phone..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
-                value={pendingSearch}
-                onChange={(e) => setPendingSearch(e.target.value)}
-              />
-            </div>
-
-            {/* Filter Stats */}
-            {pendingSearch && (
-              <div className="flex justify-between items-center text-sm bg-blue-50 p-3 rounded-lg">
-                <div className="text-blue-700">
-                  🔍 Found {filteredPendingOrders.length} pending order(s) matching "{pendingSearch}"
-                </div>
-                <button
-                  onClick={() => setPendingSearch('')}
-                  className="text-blue-600 hover:text-blue-800 font-semibold"
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-
-            {/* Orders List */}
-            <div className="space-y-3 max-h-[420px] overflow-y-auto">
-              {filteredPendingOrders.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Clock size={32} className="text-gray-400" />
+            return (
+              <div
+                key={b.order_id}
+                onClick={() => handleSelectBill(b)}
+                className="bg-white border border-gray-200 hover:border-blue-500 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-md group h-full flex flex-col"
+              >
+                {/* Order ID & Date */}
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <p className="font-mono text-xl font-bold text-blue-600">#{b.order_id}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(b.created_at).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </p>
                   </div>
-                  <p className="text-gray-500 text-lg">No pending orders</p>
-                  <p className="text-gray-400 text-sm mt-1">
-                    {pendingSearch ? "Try a different search term" : "All orders are settled"}
-                  </p>
-                </div>
-              ) : (
-                filteredPendingOrders.map((b) => {
-                  const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
-                  const paid = Number(b.received_amount || b.advance_paid || 0);
-                  const due = total - paid;
-                  const isPreOrder = b.is_advance === true;
-                  const isBulk = b.is_bulk === true;
-
-                  return (
-                    <div
-                      key={b.order_id}
-                      onClick={() => handleSelectBill(b)}
-                      className="p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer transition-all group"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-lg text-indigo-600">#{b.order_id}</span>
-                          {isPreOrder && (
-                            <span className="px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-700 rounded-full">
-                              Pre-Order
-                            </span>
-                          )}
-                          {isBulk && (
-                            <span className="px-2 py-0.5 text-xs font-bold bg-purple-100 text-purple-700 rounded-full">
-                              Bulk
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-red-600 font-bold text-lg">₹{due.toFixed(2)}</span>
-                      </div>
-
-                      <p className="text-sm text-gray-600 flex items-center gap-2 mb-1">
-                        <span className="text-base">👤</span>
-                        {b.customer?.name || "Guest"} • 📞 {b.customer?.phone || "-"}
+                   {/* Customer Info */}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="font-medium text-gray-900 text-base">
+                        {b.customer?.name || "Guest"}
                       </p>
-
-                      <div className="flex justify-between items-center text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
-                        <span>📅 {new Date(b.created_at).toLocaleDateString()}</span>
-                        {b.scheduled_time && (
-                          <span>⏰ Scheduled: {new Date(b.scheduled_time).toLocaleDateString()}</span>
-                        )}
-                        <span className="text-indigo-600 group-hover:underline">Click to process →</span>
-                      </div>
+                      {b.customer?.phone && (
+                        <p className="text-xs text-gray-500">{b.customer.phone}</p>
+                      )}
                     </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Summary Footer */}
-            {filteredPendingOrders.length > 0 && (
-              <div className="border-t border-gray-200 pt-3 flex justify-between items-center text-sm">
-                <div className="text-gray-600">
-                  Total Pending: <span className="font-bold text-gray-800">{filteredPendingOrders.length}</span>
-                  {pendingSearch && filteredPendingOrders.length !== savedBills.filter(b => b.status !== "paid").length && (
-                    <span className="text-gray-400 ml-2">
-                      (of {savedBills.filter(b => b.status !== "paid").length} total)
-                    </span>
-                  )}
+                  </div>
                 </div>
-                <div className="text-gray-600">
-                  Total Due: <span className="font-bold text-red-600">
-                    ₹{filteredPendingOrders.reduce((sum, b) => {
-                      const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
-                      const paid = Number(b.received_amount || b.advance_paid || 0);
-                      return sum + (total - paid);
-                    }, 0).toFixed(2)}
+                </div>
+
+               
+
+                {/* Due Amount */}
+                <div className="mt-1 pt-2 border-t border-gray-100 flex justify-between items-end">
+                  <div>
+                    <p className="text-xs text-gray-500">Due Amount</p>
+                    <p className="text-2xl font-bold text-blue-600">₹{due.toFixed(2)}</p>
+                  </div>
+                  <span className="text-blue-600 text-sm group-hover:underline">
+                    Process →
                   </span>
                 </div>
               </div>
-            )}
-          </div>
+            );
+          })
+        )}
+      </div>
 
-        </Modal>
+      {/* Summary Footer */}
+      {filteredPendingOrders.length > 0 && (
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex justify-between text-sm">
+          <div>
+            Total Pending: <span className="font-bold text-gray-900">{filteredPendingOrders.length}</span>
+          </div>
+          <div className="text-blue-600 font-medium">
+            Total Due: ₹{filteredPendingOrders.reduce((sum, b) => {
+              const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
+              const paid = Number(b.received_amount || b.advance_paid || 0);
+              return sum + (total - paid);
+            }, 0).toFixed(2)}
+          </div>
+        </div>
       )}
+    </div>
+  </Modal>
+)}
 
       {/* Payment Modal */}
       <AnimatePresence>
-        {showPaymentModal && selectedBill && (
-          <Modal title="Payment Settlement" onClose={() => setShowPaymentModal(false)}>
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-xl">
-                <p className="text-sm text-gray-500">Order #{selectedBill.order_id}</p>
-                <p className="text-2xl font-bold">
-                  Due Amount: ₹
-                  {(
-                    (selectedBill.custom_price || selectedBill.final_amount || 0) -
-                    (selectedBill.advance_paid || selectedBill.received_amount || 0)
-                  ).toFixed(2)}
-                </p>
-              </div>
+       {showPaymentModal && selectedBill && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    
+    {/* Payment Card */}
+    <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-5 space-y-4">
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Mode
-                </label>
-                <select
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
-                  className="w-full p-2.5 border border-gray-200 rounded-xl"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="upi">UPI</option>
-                </select>
-              </div>
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-xs text-gray-500">Order #{selectedBill.order_id}</p>
+          <p className="text-2xl font-bold text-gray-900">
+            ₹{Number(selectedBill.custom_price || selectedBill.final_amount || 0).toFixed(2)}
+          </p>
+        </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Amount Received
-                </label>
-                <input
-                  type="number"
-                  value={cashReceived}
-                  onChange={(e) => setCashReceived(Number(e.target.value))}
-                  className="w-full p-2.5 border border-gray-200 rounded-xl"
-                  placeholder="Enter amount"
-                />
-              </div>
+        <button
+          onClick={() => setShowPaymentModal(false)}
+          className="text-gray-400 hover:text-red-500 text-lg"
+        >
+          ✕
+        </button>
+      </div>
 
-              <button
-                onClick={handlePayNow}
-                disabled={
-                  cashReceived <
-                  (selectedBill.custom_price || selectedBill.final_amount || 0) -
-                  (selectedBill.advance_paid || selectedBill.received_amount || 0)
-                }
-                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-xl font-semibold transition-all"
-              >
-                Confirm Payment
-              </button>
-            </div>
-          </Modal>
-        )}
+      {/* Due */}
+      <div className="bg-red-50 border border-red-100 rounded-2xl p-3 flex justify-between">
+        <span className="text-sm text-gray-600">Due Amount</span>
+        <span className="font-bold text-red-600">
+          ₹{dueAmount.toFixed(2)}
+        </span>
+      </div>
+
+      {/* Payment Mode */}
+      <div>
+        <label className="text-xs font-semibold text-gray-600">Payment Mode</label>
+        <div className="grid grid-cols-3 gap-2 mt-2">
+          {['cash', 'upi', 'card'].map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setPaymentMode(mode)}
+              className={`py-2 rounded-xl text-xs font-semibold uppercase border transition ${
+                paymentMode === mode
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white border-gray-200 text-gray-600'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Input */}
+      <div>
+        <label className="text-xs font-semibold text-gray-600">
+          Amount Received
+        </label>
+
+        <div className="relative mt-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            ₹
+          </span>
+
+          <input
+            type="number"
+            value={cashReceived || ""}
+            onChange={(e) => setCashReceived(Number(e.target.value) || 0)}
+            className="w-full pl-8 pr-3 py-3 text-lg font-semibold border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            placeholder="0.00"
+          />
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-gray-50 border rounded-2xl p-4 text-sm space-y-2">
+        <div className="flex justify-between">
+          <span>Received</span>
+          <span className="font-semibold">
+            ₹{Number(cashReceived || 0).toFixed(2)}
+          </span>
+        </div>
+
+        <div className="flex justify-between">
+          <span>Due</span>
+          <span className="font-semibold">
+            ₹{dueAmount.toFixed(2)}
+          </span>
+        </div>
+
+        <div className="flex justify-between border-t pt-2">
+          <span className="font-semibold">Change</span>
+          <span className={balance > 0 ? "text-green-600 font-bold" : "text-gray-400"}>
+            ₹{balance > 0 ? balance.toFixed(2) : "0.00"}
+          </span>
+        </div>
+      </div>
+
+      {/* Button */}
+      <button
+        onClick={handlePayNow}
+        disabled={cashReceived < dueAmount || cashReceived <= 0}
+        className="w-full py-3 rounded-xl text-white font-semibold bg-indigo-600 disabled:bg-gray-300"
+      >
+        Confirm Payment
+      </button>
+    </div>
+  </div>
+)}
       </AnimatePresence>
     </div>
   );

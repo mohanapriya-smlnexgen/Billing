@@ -98,10 +98,18 @@ export const BillingRightPanel = (props) => {
 
       {/* ================= CART ================= */}
       <div className="flex-1 overflow-y-auto p-4 ">
+
         {cart.length === 0 ? (
           <p className="text-gray-400 text-center">Cart Empty</p>
         ) : (
-          cart.map((item) => (
+          
+          cart.map((item) =>{
+              let unitDisplay = "";
+      if (item.variant_info && item.variant_info !== "default") {
+        unitDisplay = item.variant_info.replace('_', ' '); // e.g., "1.00_kg" → "1.00 kg"
+      }
+            return(
+            
             <div
               key={`${item.food_id}-${item.variant_info || "default"}`}
               className="border p-3 mb-2 rounded"
@@ -109,6 +117,11 @@ export const BillingRightPanel = (props) => {
               <div className="flex justify-between">
                 <div>
                   <p className="font-bold">{item.name}</p>
+                   {unitDisplay && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {unitDisplay}
+                </p>
+              )}
                   <p className="text-sm">
                     ₹{Number(item.price || 0).toFixed(2)}
                   </p>
@@ -135,12 +148,14 @@ export const BillingRightPanel = (props) => {
                 </div>
               </div>
             </div>
-          ))
+          )}
+        )
+        
         )}
       </div>
 
       {/* ================= TOTAL ================= */}
-      <div className="p-4 border-t space-y-2 ">
+      <div className="p-2 border-t space-y-1 ">
         <div className="flex justify-between">
           <span>Subtotal</span>
           <span>₹{Number(subtotal || 0).toFixed(2)}</span>

@@ -180,7 +180,7 @@ const PreOrderHistory = () => {
 
       {/* TABLE */}
       <div className="bg-white rounded-2xl shadow-lg overflow-x-auto">
-        <table className="w-full min-w-[1000px]">
+        <table className="w-full min-w-[900px]">
           <thead>
             <tr className="border-b text-gray-600 text-sm">
               <th className="p-3 text-left">Order ID</th>

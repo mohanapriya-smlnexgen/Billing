@@ -46,8 +46,8 @@ const CustomersPage = () => {
   }, [customers, search, minCredit, maxCredit]);
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-2 bg-gray-50 min-h-screen">
+      <div className="flex justify-between items-center mb-2">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <User className="text-indigo-600" /> Customer Management
         </h2>
