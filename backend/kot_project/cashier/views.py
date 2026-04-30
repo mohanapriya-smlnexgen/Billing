@@ -15,7 +15,10 @@ from django.conf import settings
 from .models import DiscountSetting, Order, OrderItem, Customer
 from .serializers import CustomerSerializer, OrderSerializer
 from management.models import AdminUser
+from management.models import RestaurantSetting
 
+setting = RestaurantSetting.objects.first()
+tax_percentage = setting.tax_percentage if setting else Decimal('5')
 
 class CashierOrderViewSet(viewsets.ModelViewSet):
    
@@ -42,6 +45,65 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 "detail": "Customer not found",
                 "exists": False
             }, status=404)
+    @action(detail=False, methods=['get'], url_path='dashboard_stats')
+    def dashboard_stats(self, request):
+        today = date.today()
+
+        today_orders = Order.objects.filter(created_at__date=today)
+        paid_orders = today_orders.filter(status='paid')
+
+        stats = {
+            "total_orders": today_orders.count(),
+            "paid_orders": paid_orders.count(),
+            "pending_orders": today_orders.filter(status='pending').count(),
+
+            "today_revenue": float(
+                paid_orders.aggregate(total=Sum('final_amount'))['total'] or 0
+            ),
+
+            "bulk_orders": today_orders.filter(is_bulk=True).count(),
+
+            "preorders_delivered": today_orders.filter(
+                is_advance=True,
+                status='paid'
+            ).count(),
+        }
+
+        return Response(stats)
+    @action(detail=False, methods=['post'], url_path='set_discount')
+    def set_discount(self, request):
+        try:
+            discount_type = request.data.get('type')
+            value = Decimal(str(request.data.get('value', 0)))
+
+            if discount_type not in ['percentage', 'fixed']:
+                return Response({"error": "Invalid discount type"}, status=400)
+
+            if value < 0:
+                return Response({"error": "Invalid value"}, status=400)
+
+            if discount_type == 'percentage' and value > 100:
+                return Response({"error": "Percentage cannot exceed 100"}, status=400)
+
+            # deactivate old
+            DiscountSetting.objects.filter(is_active=True).update(is_active=False)
+
+            # create new
+            discount = DiscountSetting.objects.create(
+                discount_type=discount_type,
+                discount_value=value,
+                min_amount=0,
+                is_active=True
+            )
+
+            return Response({
+                "message": "Discount updated",
+                "type": discount.discount_type,
+                "value": float(discount.discount_value)
+            })
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
     @action(detail=False, methods=['post'], url_path='preview_discount')
     def preview_discount(self, request):
         total = Decimal(str(request.data.get('total_amount', 0)))
@@ -50,11 +112,14 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         discount_obj = DiscountSetting.objects.filter(is_active=True).first()
 
         if discount_obj and total >= discount_obj.min_amount:
-            discount = (total * discount_obj.discount_percent) / 100
+            if discount_obj.discount_type == "percentage":
+                discount = (total * discount_obj.discount_value) / 100
+            else:
+                discount = discount_obj.discount_value
 
         return Response({
             "discount": float(discount)
-      })
+        } )
     @action(detail=False, methods=['post'], url_path='create_order')
     def create_order(self, request):
         data = request.data
@@ -67,12 +132,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             # ───── CUSTOMER ─────
             customer = None
             phone = data.get('phone')
-
             if phone:
                 customer = Customer.objects.filter(phone=phone).first()
-
                 if customer:
-    # Update name if it's empty OR still "Guest"
                     if (not customer.name or customer.name.lower() == "guest") and data.get("name"):
                         customer.name = data.get("name")
                         customer.save()
@@ -82,9 +144,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                         name=data.get("name", "Guest")
                     )
 
-            # ───── AMOUNTS ─────
+            # ───── CALCULATE SUBTOTAL ─────
             total = Decimal('0')
-
             for item in cart:
                 price = Decimal(str(item.get('price', 0)))
                 qty = int(item.get('quantity', 0))
@@ -93,90 +154,69 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             if total <= 0:
                 return Response({"detail": "Invalid total amount"}, status=400)
 
-            # ───── DISCOUNT (AUTO) ─────
-            # ───── DISCOUNT ─────
-            discount = Decimal(str(data.get('discount', 0)))
+            # ───── DISCOUNT (Manual + Auto) ─────
+            manual_discount = Decimal(str(data.get('discount', 0)))          # From frontend
+            discount = manual_discount
 
-            # Apply auto discount ONLY if manual discount is 0
             if discount == 0:
                 discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+
                 if discount_obj and total >= discount_obj.min_amount:
-                    discount = (total * discount_obj.discount_percent) / 100
+                    if discount_obj.discount_type == "percentage":
+                        discount = (total * discount_obj.discount_value) / 100
+                    else:
+                        discount = discount_obj.discount_value
 
             # ───── CREDIT ─────
             credit = Decimal(str(data.get('credit', 0)))
-
             if credit < 0:
                 return Response({"detail": "Invalid credit"}, status=400)
+            if customer and credit > customer.credits:
+                return Response({"detail": "Not enough credits"}, status=400)
 
-            if customer:
-                if credit > customer.credits:
-                    return Response({"detail": "Not enough credits"}, status=400)
-            custom_price = data.get('custom_price')
+            # ───── TAX ─────
+            setting = RestaurantSetting.objects.first()
+            tax_percentage = setting.tax_percentage if setting else Decimal('5')
+            tax_amount = (total * tax_percentage) / Decimal('100')           # Tax on subtotal (before discount)
 
-            if custom_price is not None:
-                final_amount = Decimal(str(custom_price))
-            else:
-                final_amount = total - discount - credit
-            # ───── FINAL AMOUNT ─────
+            # ───── FINAL AMOUNT (CORRECT LOGIC) ─────
             advance = Decimal(str(data.get('advance_paid', 0)))
             custom_price = data.get('custom_price')
 
             if custom_price is not None:
                 final_amount = Decimal(str(custom_price))
             else:
-                final_amount = total - discount - credit
+                # ✅ CORRECT CALCULATION: subtotal - discount + tax - credit
+                final_amount = total - discount + tax_amount - credit
 
             if final_amount < 0:
                 final_amount = Decimal('0')
-            
 
             remaining_amount = final_amount - advance
-
-            # Never allow negative remaining
             if remaining_amount < 0:
                 remaining_amount = Decimal('0')
-            # status logic
-            # NEVER auto mark paid on create
-            if advance > 0:
-                status_value = 'advance_paid'
-            else:
-                status_value = 'pending'
 
-            if final_amount < 0:
-                final_amount = Decimal('0')
-
-            # ───── ALERTS ─────
-            if discount > (total * Decimal('0.5')):
-                print("⚠ High discount detected")
-
-            if total > 5000:
-                print("🔥 High value order")
-
-            if customer and customer.credits < 50:
-                print(f"⚠ Low credits for {customer.name}")
+            status_value = 'advance_paid' if advance > 0 else 'pending'
 
             # ───── CREATE ORDER ─────
             order = Order.objects.create(
-            customer=customer,
-            total_amount=total,
-            discount_amount=discount,
-            credit_used=credit,
-            final_amount=final_amount,
-
-            advance_paid=advance,              # ✅ NEW
-            remaining_amount=remaining_amount, # ✅ NEW
-
-            payment_mode = data.get('payment_mode') or 'cash',
-            is_bulk=data.get('is_bulk', False),
-            bulk_note=data.get('bulk_note', ''),
-            is_advance=data.get('is_advance', False),
-            scheduled_time=data.get('scheduled_time'),
-            source=data.get('source', 'offline'),
-            external_order_id=data.get('external_order_id', ''),
-
-            status=status_value               # ✅ IMPORTANT
-        )
+                customer=customer,
+                total_amount=total,
+                discount_amount=discount,           # ← FIXED: Save actual discount
+                credit_used=credit,
+                final_amount=final_amount,
+                tax_amount=tax_amount,
+                advance_paid=advance,
+                remaining_amount=remaining_amount,
+                payment_mode=data.get('payment_mode') or 'cash',
+                is_bulk=data.get('is_bulk', False),
+                bulk_note=data.get('bulk_note', ''),
+                is_advance=data.get('is_advance', False),
+                scheduled_time=data.get('scheduled_time'),
+                source=data.get('source', 'offline'),
+                external_order_id=data.get('external_order_id', ''),
+                status=status_value
+            )
 
             # ───── SAVE ITEMS ─────
             items = []
@@ -188,10 +228,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                     quantity=item['quantity'],
                     price=item['price']
                 ))
-
             OrderItem.objects.bulk_create(items)
 
-            # ───── DEDUCT CUSTOMER CREDIT ─────
+            # ───── DEDUCT CREDIT ─────
             if customer and credit > 0:
                 customer.credits -= credit
                 customer.save()

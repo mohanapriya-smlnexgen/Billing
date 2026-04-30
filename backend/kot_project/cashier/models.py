@@ -37,7 +37,7 @@ class Order(models.Model):
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credit_used = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     final_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_mode = models.CharField(max_length=20, default='cash')
     received_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
@@ -73,11 +73,20 @@ class OrderItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     def subtotal(self):
         return self.quantity * self.price
-class DiscountSetting(models.Model):
-    name = models.CharField(max_length=100)
-    discount_percent = models.DecimalField(max_digits=5, decimal_places=2)
-    is_active = models.BooleanField(default=True)
-    min_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+# models.py
 
-    def __str__(self):
-        return f"{self.name} ({self.discount_percent}%)"
+class DiscountSetting(models.Model):
+    DISCOUNT_TYPE_CHOICES = (
+        ('percentage', 'Percentage'),
+        ('fixed', 'Fixed Amount'),
+    )
+
+    discount_type = models.CharField(
+        max_length=20,
+        choices=DISCOUNT_TYPE_CHOICES,
+        default='percentage'
+    )
+
+    discount_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    min_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
