@@ -155,8 +155,25 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Invalid total amount"}, status=400)
 
             # ───── DISCOUNT (Manual + Auto) ─────
-            manual_discount = Decimal(str(data.get('discount', 0)))          # From frontend
-            discount = manual_discount
+            manual_discount = Decimal(str(data.get('discount', 0)))
+            discount_type = data.get('discount_type', 'fixed')
+
+            if manual_discount > 0:
+                if discount_type == "percentage":
+                    discount = (total * manual_discount) / Decimal('100')
+                else:
+                    discount = manual_discount
+            else:
+                discount = Decimal('0')
+
+                # fallback to auto discount
+                discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+
+                if discount_obj and total >= discount_obj.min_amount:
+                    if discount_obj.discount_type == "percentage":
+                        discount = (total * discount_obj.discount_value) / 100
+                    else:
+                        discount = discount_obj.discount_value
 
             if discount == 0:
                 discount_obj = DiscountSetting.objects.filter(is_active=True).first()
