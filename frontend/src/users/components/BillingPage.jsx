@@ -114,6 +114,8 @@ export default function BillingPage() {
   const [customerId, setCustomerId] = useState(null);
   const [customerFound, setCustomerFound] = useState(false);
   const [pendingSearch, setPendingSearch] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("all");
+  const [discountType, setDiscountType] = useState("fixed");
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
   );
@@ -217,7 +219,15 @@ export default function BillingPage() {
     }, 10000);
     return () => clearInterval(interval);
   }, []);
+const subCategories = useMemo(() => {
+  if (selectedCategory === "all") return ["all"];
 
+  const subs = menuItems
+    .filter(item => item.category === selectedCategory)
+    .map(item => item.subcategory);
+
+  return ["all", ...new Set(subs)];
+}, [menuItems, selectedCategory]);
   const filteredOrders = useMemo(() => {
     let filtered = preOrderAlerts;
 
@@ -401,6 +411,7 @@ export default function BillingPage() {
         name: item.food_name,
         price: Number(item.price),
         category: item.category?.toLowerCase() || "uncategorized",
+        subcategory: item.subcategory?.toLowerCase() || "general", 
         variants: item.variants || []   // ✅ ADD THIS
       })));
 
@@ -428,14 +439,19 @@ export default function BillingPage() {
     }
   };
 
-  const filteredItems = useMemo(() => {
-    return menuItems.filter((item) => {
-      const matchCategory =
-        selectedCategory === "all" || item.category === selectedCategory;
-      const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
-      return matchCategory && matchSearch;
-    });
-  }, [search, selectedCategory, menuItems]);
+const filteredItems = useMemo(() => {
+  return menuItems.filter((item) => {
+    const matchCategory =
+      selectedCategory === "all" || item.category === selectedCategory;
+
+    const matchSubCategory =
+      selectedSubCategory === "all" || item.subcategory === selectedSubCategory;
+
+    const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
+
+    return matchCategory && matchSubCategory && matchSearch;
+  });
+}, [search, selectedCategory, selectedSubCategory, menuItems]);
 
   const addToCart = (item) => {
     const existing = cart.find(
@@ -484,7 +500,12 @@ export default function BillingPage() {
   }, [subtotal]);
 
  const tax = subtotal * (taxPercentage / 100);
-const subtotalAfterDiscount = subtotal - discount;           // ← Important
+const discountValue =
+  discountType === "percentage"
+    ? (subtotal * discount) / 100
+    : discount;
+
+const subtotalAfterDiscount = subtotal - discountValue;         // ← Important
 const computedTotal = subtotalAfterDiscount + tax - credit;  // ← Fixed order
 const finalTotal = Number(
   orderType !== "normal" && customPrice > 0
@@ -507,9 +528,10 @@ const finalTotal = Number(
       const payload = {
         total_amount: subtotal,
         final_amount: finalTotal,
-        discount_amount: discount,
+        discount_amount: discountValue,
         credit_used: credit,
         discount: discount,
+        discount_type: discountType,  
         name: customerName,
         phone: customerPhone,
         is_bulk: orderType === "bulk",
@@ -575,7 +597,10 @@ const printAdvanceBill = (bill) => {
   const printWindow = window.open("", "_blank");
   const subtotal = Number(bill.total_amount || bill.custom_price || 0);
   const tax = subtotal * (taxPercentage / 100);
-  const discount = Number(bill.discount_amount || 0);
+  const discount =
+  bill.discount_type === "percentage" || bill.discount > 0 && !bill.discount_amount
+    ? (subtotal * Number(bill.discount || 0)) / 100
+    : Number(bill.discount_amount || 0);
   const total = subtotal - discount + tax;
 
   const advance = Number(bill.advance_paid || bill.received_amount || 0);
@@ -723,7 +748,12 @@ const printAdvanceBill = (bill) => {
   if (!bill) return;
 
   const subtotal = Number(bill.total_amount || bill.customer_price || 0);
-  const discount = Number(bill.discount_amount || 0);
+ const discount =
+  Number(bill.discount_amount) > 0
+    ? Number(bill.discount_amount)
+    : bill.discount_type === "percentage"
+      ? (subtotal * Number(bill.discount || 0)) / 100
+      : Number(bill.discount || 0);
   const tax = subtotal * (taxPercentage / 100);
   const credit = Number(bill.credit_used || 0);
   const final = subtotal - discount + tax;
@@ -890,9 +920,9 @@ const printAdvanceBill = (bill) => {
 
           <button
             onClick={() => navigate("/dashboard")}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
+            className="p-2 flex gap-1 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
           >
-            <ClipboardList size={20} />
+            <ClipboardList size={20} />Admin
           </button>
 
           <div
@@ -935,21 +965,54 @@ const printAdvanceBill = (bill) => {
               <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Menu Groups</h2>
               
             </div>
-            <nav className="flex flex-col gap-1">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${selectedCategory === cat
-                    ? "bg-indigo-50 text-indigo-700"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                    }`}
-                >
-                  <span className="capitalize">{cat}</span>
-                  {selectedCategory === cat && <ChevronRight size={14} />}
-                </button>
-              ))}
-            </nav>
+           <nav className="flex flex-col gap-2">
+
+  {/* CATEGORY LIST */}
+  <div>
+    <p className="text-xs font-bold text-gray-400 px-2 mb-2">CATEGORY</p>
+
+    {categories.map((cat) => (
+      <button
+        key={cat}
+        onClick={() => {
+          setSelectedCategory(cat);
+          setSelectedSubCategory("all"); // reset subcategory
+        }}
+        className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold ${
+          selectedCategory === cat
+            ? "bg-indigo-100 text-indigo-700"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        {cat}
+      </button>
+    ))}
+  </div>
+
+  {/* SUB CATEGORY */}
+  {selectedCategory !== "all" && (
+    <div className="mt-4">
+      <p className="text-xs font-bold text-gray-400 px-2 mb-2">
+        SUB CATEGORY
+      </p>
+
+      {subCategories.map((sub) => (
+        <button
+          key={sub}
+          onClick={() => setSelectedSubCategory(sub)}
+          className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
+            selectedSubCategory === sub
+              ? "bg-green-100 text-green-700"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          {sub}
+        </button>
+      ))}
+    </div>
+  )}
+
+</nav>
           </div>
         </aside>
 
@@ -1053,6 +1116,8 @@ const printAdvanceBill = (bill) => {
   setSelectedBill={setSelectedBill}
   menuItems={menuItems}
   subtotal={subtotal}
+  discountType={discountType }
+  setDiscountType={setDiscountType}
   tax={tax}
   taxPercentage={taxPercentage}
   discount={discount}
@@ -1061,7 +1126,8 @@ const printAdvanceBill = (bill) => {
   setCredit={setCredit}
   finalTotal={finalTotal}
   advanceAmount={advanceAmount}
-
+   discountType={discountType}
+  setDiscountType={setDiscountType}
   selectedBill={selectedBill}
 
   showTaxEditor={showTaxEditor}

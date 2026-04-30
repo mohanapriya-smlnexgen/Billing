@@ -328,7 +328,29 @@ const DashboardHome = ({ kots, user }) => {
     value: 0
   });
 const [saving, setSaving] = React.useState(false);
+const handleClearDiscount = async () => {
+  try {
+    setSaving(true);
 
+    // Reset in frontend
+    setDiscount({
+      type: "percentage",
+      value: 0
+    });
+
+    // Reset in backend
+    await API.post("/cashier-orders/set_discount/", {
+      type: "percentage",
+      value: 0
+    });
+
+    alert("Discount cleared!");
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setSaving(false);
+  }
+};
 const handleSaveDiscount = async () => {
   setSaving(true);
 
@@ -414,9 +436,18 @@ const handleSaveDiscount = async () => {
 
         {/* 🔹 Discount Settings */}
         <div className="bg-white rounded-2xl shadow-lg p-5">
+<div className="flex  gap-10">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
             💸 Discount Settings
-          </h3>
+          </h3> 
+          <button
+    onClick={handleClearDiscount}
+    disabled={saving}
+    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
+  >
+    Clear Discount
+  </button>
+  </div>
 
           <div className="space-y-4">
             
@@ -464,6 +495,7 @@ const handleSaveDiscount = async () => {
 >
   {saving ? "Saving..." : "Save Discount"}
 </button>
+ 
           </div>
         </div>
       </div>

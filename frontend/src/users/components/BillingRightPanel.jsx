@@ -70,13 +70,18 @@ export const BillingRightPanel = (props) => {
     source,
     setSource,
     externalOrderId,
+    discountType,
+    setDiscountType,
     setExternalOrderId,
     searchCustomer,
   } = props;
 
   const balanceToPay = Number(finalTotal || 0) - Number(advanceAmount || 0);
   const [showCustomerModal, setShowCustomerModal] = React.useState(false);
-
+const discountValue =
+  discountType === "percentage"
+    ? (subtotal * discount) / 100
+    : discount;
   return (
     <aside className="w-[390px] bg-white rounded-xl border flex flex-col overflow-hidden">
       {/* ================= CUSTOMER ================= */}
@@ -167,11 +172,13 @@ export const BillingRightPanel = (props) => {
         </div>
 
         {discount > 0 && (
-          <div className="flex justify-between text-green-600">
-            <span>Discount</span>
-            <span>-₹{Number(discount || 0).toFixed(2)}</span>
-          </div>
-        )}
+  <div className="flex justify-between text-green-600">
+    <span>
+      Discount ({discountType === "percentage" ? `${discount}%` : "₹"})
+    </span>
+    <span>-₹{Number(discountValue).toFixed(2)}</span>
+  </div>
+)}
 
         <div className="flex justify-between font-bold text-lg">
           <span>Total</span>₹{Number(finalTotal || 0).toFixed(2)}
@@ -234,6 +241,8 @@ export const BillingRightPanel = (props) => {
           customerPhone={customerPhone}
           setCustomerPhone={setCustomerPhone}
           menuItems={menuItems} 
+          discountType={discountType}
+          setDiscountType={setDiscountType}
           customerName={customerName}
           setCustomerName={setCustomerName}
           customerFound={customerFound}
