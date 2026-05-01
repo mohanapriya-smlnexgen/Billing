@@ -123,7 +123,7 @@ const [restaurantGstin, setRestaurantGstin] = useState("");
     localStorage.getItem("restaurant_name") || "My Restaurant"
   );
   const [taxPercentage, setTaxPercentage] = useState(
-    Number(localStorage.getItem("tax_percentage")) || 5
+    Number(localStorage.getItem("tax_percentage")) || 0
   );
   const [showTaxEditor, setShowTaxEditor] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1310,6 +1310,8 @@ ${received > 0 ? `
   setSelectedBill={setSelectedBill}
   menuItems={menuItems}
   subtotal={subtotal}
+  showTaxEditor={showTaxEditor}
+  setShowTaxEditor={setShowTaxEditor}
   discountType={discountType }
   setDiscountType={setDiscountType}
   tax={tax}

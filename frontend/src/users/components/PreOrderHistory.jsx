@@ -34,11 +34,8 @@ const PreOrderHistory = () => {
 
       // ✅ Correct Pre-order Logic
       const advanceOrders = data.filter(
-        (o) =>
-          
-          o.advance_paid > 0
-         
-      );
+  (o) => o.is_advance === true || o.is_bulk === true
+);
 
       setOrders(advanceOrders);
     } catch (err) {
