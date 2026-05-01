@@ -85,21 +85,60 @@ const discountValue =
   return (
     <aside className="w-[390px] bg-white rounded-xl border flex flex-col overflow-hidden">
       {/* ================= CUSTOMER ================= */}
-      <div className="border-b p-4 bg-gray-50 flex justify-between items-center">
-        <div>
-          <p className="font-semibold">{customerName || "Walk-in Customer"}</p>
-          {customerPhone && (
-            <p className="text-xs text-gray-500">{customerPhone}</p>
-          )}
-        </div>
+     <div className="border-b p-4 bg-gray-50 flex justify-between items-center">
+  <div>
+    <p className="font-semibold">{customerName || "Walk-in Customer"}</p>
+    {customerPhone && (
+      <p className="text-xs text-gray-500">{customerPhone}</p>
+    )}
+  </div>
 
-        <button
-          onClick={() => setShowCustomerModal(true)}
-          className="text-indigo-600 text-sm font-semibold"
-        >
-          Edit
-        </button>
-      </div>
+  <div className="flex items-center gap-2">
+
+    {/* 🔄 Refresh Button */}
+    <button
+      onClick={() => {
+        setCart([]);
+        setSelectedBill(null);
+        setCustomerName("");
+        setCustomerPhone("");
+        setDiscount(0);
+        setCredit(0);
+        setAdvanceAmount(0);
+        setOrderType("normal");
+        setCustomPrice(0);
+        setScheduledTime("");
+        setBulkNote("");
+      }}
+      className="p-2 hover:bg-gray-200 rounded-full transition"
+      title="Reset Cart & Bill"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="w-5 h-5 text-gray-600"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M4 4v5h.582M20 20v-5h-.581M5.07 19A9 9 0 105 5.07"
+        />
+      </svg>
+    </button>
+
+    {/* Edit Button */}
+    <button
+      onClick={() => setShowCustomerModal(true)}
+      className="text-indigo-600 text-sm font-semibold"
+    >
+      Edit
+    </button>
+
+  </div>
+</div>
 
       {/* ================= CART ================= */}
       <div className="flex-1 overflow-y-auto p-4 ">
