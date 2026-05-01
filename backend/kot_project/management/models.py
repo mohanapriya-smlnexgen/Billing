@@ -339,6 +339,9 @@ class RestaurantSetting(models.Model):
     restaurant_name = models.CharField(max_length=255, default="My Restaurant")
     admin_email = models.EmailField(blank=True, null=True)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=5.00)
+    address = models.TextField(blank=True, null=True)
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    gstin = models.CharField(max_length=20, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

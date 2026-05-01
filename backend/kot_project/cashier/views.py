@@ -17,8 +17,6 @@ from .serializers import CustomerSerializer, OrderSerializer
 from management.models import AdminUser
 from management.models import RestaurantSetting
 
-setting = RestaurantSetting.objects.first()
-tax_percentage = setting.tax_percentage if setting else Decimal('5')
 
 class CashierOrderViewSet(viewsets.ModelViewSet):
    
@@ -122,6 +120,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         } )
     @action(detail=False, methods=['post'], url_path='create_order')
     def create_order(self, request):
+        
+        setting = RestaurantSetting.objects.first()
+        tax_percentage = setting.tax_percentage if setting else Decimal('5')
         data = request.data
 
         try:

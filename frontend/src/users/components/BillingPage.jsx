@@ -40,7 +40,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const REPORT_API = `${BASE_URL}/report-setting/`;
 const MENU_API = `${BASE_URL}/food-menu/`;
 const BILL_API = `${BASE_URL}/cashier-orders/`;
-const SETTING_API = `${BASE_URL}/restaurant-setting/`;
+const SETTING_API = `${BASE_URL}/setting/`;
 
 const Modal = ({ children, title, onClose }) => (
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-1">
@@ -81,7 +81,8 @@ const Modal = ({ children, title, onClose }) => (
 export default function BillingPage() {
   const [search, setSearch] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
-  // const [selectedVariants, setSelectedVariants] = useState({});
+  const [tempPhone, setTempPhone] = useState("");
+const [tempGstin, setTempGstin] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [cart, setCart] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
@@ -102,7 +103,8 @@ export default function BillingPage() {
   const [paymentMode, setPaymentMode] = useState("cash");
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [customerName, setCustomerName] = useState("");
-
+const [restaurantPhone, setRestaurantPhone] = useState("");
+const [restaurantGstin, setRestaurantGstin] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [discount, setDiscount] = useState(0);
   const [credit, setCredit] = useState(0);
@@ -116,6 +118,7 @@ export default function BillingPage() {
   const [pendingSearch, setPendingSearch] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("all");
   const [discountType, setDiscountType] = useState("fixed");
+  const [address, setAddress] = useState(""); // ✅ ADD THIS
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
   );
@@ -124,7 +127,9 @@ export default function BillingPage() {
   );
   const [showTaxEditor, setShowTaxEditor] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-
+const [isEditOpen, setIsEditOpen] = useState(false);
+const [tempName, setTempName] = useState("");
+const [tempAddress, setTempAddress] = useState("");
   // Search and Filter states for notification modal
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState("");
@@ -153,7 +158,32 @@ export default function BillingPage() {
   useEffect(() => {
     localStorage.setItem("read_notifications", JSON.stringify(readNotifications));
   }, [readNotifications]);
+const openEditModal = () => {
+  setTempName(restaurantName);
+  setTempAddress(address || "");
+  setTempPhone("");   // or existing value if API has it
+  setTempGstin(""); 
+  setIsEditOpen(true);
+};
+useEffect(() => {
+  const fetchSettings = async () => {
+    try {
+      const res = await axios.get(SETTING_API);
 
+      setRestaurantName(res.data.restaurant_name);
+      setAddress(res.data.address || ""); // ✅ ADD THIS
+      setTempPhone(res.data.phone_number || "");
+      setTempGstin(res.data.gstin || "");
+      setRestaurantPhone(res.data.phone_number);
+      setRestaurantGstin(res.data.gstin);
+      console.log("test",res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  fetchSettings();
+}, []);
   const fetchPreOrderAlerts = async () => {
     try {
       const res = await axios.get(BILL_API);
@@ -349,13 +379,25 @@ const subCategories = useMemo(() => {
     }
   };
 
-  const handleSaveRestaurantName = async () => {
-    try {
-      await axios.post(SETTING_API, { restaurant_name: restaurantName });
-    } catch (error) {
-      console.error(error);
-    }
-  };
+const handleSaveSettings = async () => {
+  try {
+    const res = await axios.post(SETTING_API, {
+      restaurant_name: tempName,
+      address: tempAddress,
+      phone_number: tempPhone,
+      gstin: tempGstin,
+    });
+
+    setRestaurantName(res.data.restaurant_name);
+    setAddress(res.data.address);
+    setRestaurantPhone(res.data.phone_number);
+    setRestaurantGstin(res.data.gstin);
+
+    setIsEditOpen(false);
+  } catch (err) {
+    console.error(err);
+  }
+};
 
   const handleSaveAdminEmail = async () => {
     try {
@@ -569,7 +611,7 @@ const finalTotal = Number(
       setCart([]);
       setAdvanceAmount(0);
       await fetchPreOrderAlerts();
-      setTimeout(() => printAdvanceBill(res.data), 500);
+      // setTimeout(() => printAdvanceBill(res.data), 500);
       await fetchBills();
     } catch (err) {
       console.error("Error creating order:", err);
@@ -606,74 +648,117 @@ const printAdvanceBill = (bill) => {
   const advance = Number(bill.advance_paid || bill.received_amount || 0);
   const balance = total - advance;
 
-  printWindow.document.write(`
-    <html>
-    <head>
-      <title>Order #${bill.order_id}</title>
-      <style>
-        body { 
-          font-family: 'Courier New', monospace; 
-          width: 300px; 
-          margin: auto; 
-          padding: 20px; 
-          line-height: 1.4;
-        }
-        .header { 
-          text-align: center; 
-          border-bottom: 2px dashed #000; 
-          padding-bottom: 10px; 
-          margin-bottom: 15px; 
-        }
-        .item { 
-          display: flex; 
-          justify-content: space-between; 
-          margin: 6px 0; 
-        }
-        .total-line { 
-          border-top: 2px dashed #000; 
-          margin: 12px 0 8px 0; 
-          padding-top: 8px; 
-        }
-        .discount { color: #22c55e; font-weight: bold; }
-        .warning { 
-          color: #ef4444; 
-          font-weight: bold; 
-          text-align: center; 
-          margin-top: 15px; 
-        }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <h3>${restaurantName}</h3>
-        <p>Order #${bill.order_id}</p>
-        <p>${new Date().toLocaleString()}</p>
-      </div>
+ printWindow.document.write(`
+<html>
+<head>
+<title>Bill</title>
+<style>
+  body {
+    font-family: monospace;
+    width: 300px;
+    margin: auto;
+    padding: 10px;
+    font-size: 12px;
+  }
+  .center { text-align:center; }
+  .row { display:flex; justify-content:space-between; }
+  .line { border-top:1px dashed #000; margin:8px 0; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { font-size:12px; padding:4px 0; }
+  th { border-bottom:1px solid #000; }
+</style>
+</head>
 
-      <div>
-        ${(bill.items || []).map((i) => `
-          <div class="item">
-            <span>${i.name}</span>
-            <span>₹${(i.price * i.quantity).toFixed(2)}</span>
-          </div>
-        `).join("")}
-      </div>
+<body>
 
-      <div class="total-line"></div>
+<div class="center">
+  <h3>${restaurantName}</h3>
+  <div>${address || ""}</div>
+  <div>Mob: ${restaurantPhone || ""}</div>
+  <div>GSTIN: ${restaurantGstin || ""}</div>
+</div>
 
-      <div class="item"><strong>Total</strong><strong>₹${subtotal.toFixed(2)}</strong></div>
-      ${discount > 0 ? `<div class="item discount"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>` : ""}
-      <div class="item"><span>Tax</span><span>₹${tax.toFixed(2)}</span></div>
-      <div class="item"><span>Grand Total</span><span>₹${total.toFixed(2)}</span></div>
-      <div class="item"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>
-      <div class="item"><strong>Balance</strong><strong>₹${balance.toFixed(2)}</strong></div>
+<div class="line"></div>
 
-      <div class="warning">
-        ⚠ Pending Order - Please Pay Balance
-      </div>
-    </body>
-    </html>
-  `);
+<div class="row">
+  <span>Date: ${new Date().toLocaleDateString()}</span>
+  <span>Time: ${new Date().toLocaleTimeString()}</span>
+</div>
+
+<div class="row">
+  <span>Bill No: ${bill.order_id}</span>
+  <span>${bill.order_type || "Pick Up"}</span>
+</div>
+
+<div class="line"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Qty</th>
+      <th>Price</th>
+      <th>Amt</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    ${(bill.items || []).map(i => `
+      <tr>
+        <td>${i.name}</td>
+        <td>${i.quantity}</td>
+        <td>${i.price}</td>
+        <td>${(i.price * i.quantity).toFixed(2)}</td>
+      </tr>
+    `).join("")}
+  </tbody>
+</table>
+
+<div class="line"></div>
+
+<div class="row">
+  <span>Total Qty</span>
+  <span>${(bill.items || []).reduce((a,b)=>a+b.quantity,0)}</span>
+</div>
+
+<div class="row">
+  <span>Sub Total</span>
+  <span>₹${subtotal.toFixed(2)}</span>
+</div>
+
+${discount > 0 ? `
+<div class="row">
+  <span>Discount</span>
+  <span>-₹${discount.toFixed(2)}</span>
+</div>` : ""}
+
+<div class="row">
+  <span>Tax</span>
+  <span>₹${tax.toFixed(2)}</span>
+</div>
+
+<div class="line"></div>
+
+<div class="row" style="font-weight:bold">
+  <span>Grand Total</span>
+  <span>₹${total.toFixed(2)}</span>
+</div>
+
+${advance > 0 ? `
+<div class="row">
+  <span>Advance</span>
+  <span>₹${advance.toFixed(2)}</span>
+</div>` : ""}
+
+<div class="line"></div>
+
+<div class="center">
+  <p>🙏 THANK YOU</p>
+</div>
+
+</body>
+</html>
+`);
 
   printWindow.document.close();
   printWindow.print();
@@ -743,82 +828,203 @@ const printAdvanceBill = (bill) => {
       console.error(error);
     }
   };
- const printBill = (billData) => {
+const printBill = (billData) => {
   const bill = billData || selectedBill;
   if (!bill) return;
 
-  const subtotal = Number(bill.total_amount || bill.customer_price || 0);
- const discount =
-  Number(bill.discount_amount) > 0
-    ? Number(bill.discount_amount)
-    : bill.discount_type === "percentage"
-      ? (subtotal * Number(bill.discount || 0)) / 100
-      : Number(bill.discount || 0);
-  const tax = subtotal * (taxPercentage / 100);
-  const credit = Number(bill.credit_used || 0);
-  const final = subtotal - discount + tax;
-  const advance = Number(bill.advance_paid || 0);
-  const paidNow = Number(bill.received_amount || 0);
-  const totalPaid = advance + paidNow;
-  const change = totalPaid - final;
-
   const printWindow = window.open("", "_blank");
 
+  const subtotal = Number(bill.total_amount || bill.custom_price || 0);
+
+  const tax = subtotal * (taxPercentage / 100);
+
+  const discount =
+    bill.discount_type === "percentage" || (bill.discount > 0 && !bill.discount_amount)
+      ? (subtotal * Number(bill.discount || 0)) / 100
+      : Number(bill.discount_amount || 0);
+
+  const credit = Number(bill.credit_used || 0);
+  const advance = Number(bill.advance_paid || 0);
+  const received = Number(bill.received_amount || 0);
+
+  const total = subtotal - discount + tax;
+  const paid = advance + received;
+  const balance = total - paid;
+
   printWindow.document.write(`
-    <html>
-    <head>
-      <title>Invoice #${bill.order_id}</title>
-      <style>
-        body { 
-          font-family: 'Courier New', monospace; 
-          width: 300px; 
-          margin: auto; 
-          padding: 15px; 
-        }
-        .center { text-align: center; }
-        .row { display: flex; justify-content: space-between; margin: 4px 0; }
-        .bold { font-weight: bold; }
-        .line { border-top: 1px dashed #000; margin: 10px 0; }
-        .discount { color: #22c55e; }
-      </style>
-    </head>
-    <body>
-      <div class="center">
-        <h2>${restaurantName}</h2>
-        <p>Order #${bill.order_id}</p>
-        <p class="small">${new Date(bill.created_at).toLocaleString()}</p>
-      </div>
+<html>
+<head>
+<title>Bill</title>
+<style>
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
 
-      <div class="line"></div>
+body {
+  width: 280px;
+  margin: 0 auto;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  line-height: 1.2;
+}
 
-      ${(bill.items || []).map(item => `
-        <div class="row">
-          <span>${item.name} ${item.variant_info ? ` (${item.variant_info.replace("_", " ")})` : ""} </span>
-          <span>₹${(item.price * item.quantity).toFixed(2)}</span>
-        </div>
-      `).join("")}
+/* IMPORTANT: remove default spacing */
+h3 {
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
 
-      <div class="line"></div>
 
-      <div class="row"><span>Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
-      <div class="row"><span>Tax</span><span>₹${tax.toFixed(2)}</span></div>
-      ${discount > 0 ? `<div class="row discount"><span>Discount</span><span>- ₹${discount.toFixed(2)}</span></div>` : ""}
-      ${credit > 0 ? `<div class="row"><span>Credit Used</span><span>- ₹${credit.toFixed(2)}</span></div>` : ""}
-      
-      <div class="line"></div>
-      
-      <div class="row bold"><span>Total</span><span>₹${final.toFixed(2)}</span></div>
+  * {
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-      ${advance > 0 ? `<div class="row"><span>Advance Paid</span><span>₹${advance.toFixed(2)}</span></div>` : ""}
-      <div class="row"><span>Paid Now</span><span>₹${paidNow.toFixed(2)}</span></div>
-      <div class="row bold"><span>Total Paid</span><span>₹${totalPaid.toFixed(2)}</span></div>
-      ${change > 0 ? `<div class="row"><span>Change</span><span>₹${change.toFixed(2)}</span></div>` : ""}
+.center {
+  text-align: center;
+}
 
-      <div class="line"></div>
-      <p class="center">🙏 Thank You! Visit Again</p>
-    </body>
-    </html>
-  `);
+.center div {
+  margin: 0;
+  padding: 1px 0;
+  line-height: 1.1;
+  font-size: 12px;
+}
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+
+  .line {
+    border-top: 1px dashed #000;
+    margin: 6px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    font-size: 12px;
+    padding: 2px 0;
+  }
+
+  th {
+    border-bottom: 1px solid #000;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="center">
+  <h3>${restaurantName}</h3>
+  <div>${address || ""}</div>
+  <div>Mob: ${restaurantPhone || ""}</div>
+  <div>GSTIN: ${restaurantGstin || ""}</div>
+</div>
+
+<div class="line"></div>
+
+<div class="row">
+  <span>Date: ${new Date().toLocaleDateString()}</span>
+  <span>Time: ${new Date().toLocaleTimeString()}</span>
+</div>
+
+<div class="row">
+  <span>Bill No: ${bill.order_id}</span>
+  <span>${bill.order_type || "Normal"}</span>
+</div>
+
+<div class="line"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Qty</th>
+      <th>Price</th>
+      <th>Amt</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    ${(bill.items || []).map(i => `
+      <tr>
+        <td>${i.name}</td>
+        <td>${i.quantity}</td>
+        <td>${i.price}</td>
+        <td>${(i.price * i.quantity).toFixed(2)}</td>
+      </tr>
+    `).join("")}
+  </tbody>
+</table>
+
+<div class="line"></div>
+
+<div class="row">
+  <span>Total Qty</span>
+  <span>${(bill.items || []).reduce((a, b) => a + b.quantity, 0)}</span>
+</div>
+
+<div class="row">
+  <span>Sub Total</span>
+  <span>₹${subtotal.toFixed(2)}</span>
+</div>
+
+${discount > 0 ? `
+<div class="row">
+  <span>Discount</span>
+  <span>-₹${discount.toFixed(2)}</span>
+</div>` : ""}
+
+<div class="row">
+  <span>Tax</span>
+  <span>₹${tax.toFixed(2)}</span>
+</div>
+
+<div class="line"></div>
+
+<div class="row" style="font-weight:bold">
+  <span>Grand Total</span>
+  <span>₹${total.toFixed(2)}</span>
+</div>
+
+${advance > 0 ? `
+<div class="row">
+  <span>Advance</span>
+  <span>₹${advance.toFixed(2)}</span>
+</div>` : ""}
+
+${received > 0 ? `
+<div class="row">
+  <span>Paid Now</span>
+  <span>₹${received.toFixed(2)}</span>
+</div>` : ""}
+
+<div class="row" style="font-weight:bold">
+  <span>Balance</span>
+  <span>₹${balance.toFixed(2)}</span>
+</div>
+
+<div class="line"></div>
+
+<div class="center">
+  <p>🙏 THANK YOU</p>
+</div>
+
+</body>
+</html>
+`);
 
   printWindow.document.close();
   printWindow.print();
@@ -871,22 +1077,17 @@ const printAdvanceBill = (bill) => {
 
           <div className="h-8 w-[1px] bg-slate-200 mx-2" />
 
-          <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
-            <Store size={16} className="text-indigo-500" />
-            <input
-              className="bg-transparent font-bold text-sm outline-none w-32"
-              value={restaurantName}
-              onChange={(e) => setRestaurantName(e.target.value)}
-            />
+ <div className="flex items-center gap-3">
+          <Store className="text-indigo-600" />
+          <span className="font-bold text-lg">{restaurantName}</span>
+        </div>
 
-            {/* ✅ ADD THIS BUTTON */}
-            <button
-              onClick={handleSaveRestaurantName}
-              className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-lg font-bold"
-            >
-              SAVE
-            </button>
-          </div>
+        <button
+          onClick={openEditModal}
+          className="px-2 py-1 text-sm bg-indigo-600 text-white rounded-lg"
+        >
+          EDIT
+        </button>
         </div>
 
         <div className="flex items-center gap-4">
@@ -1050,9 +1251,9 @@ const printAdvanceBill = (bill) => {
       >
         {/* TOP CONTENT */}
         <div className="gap-1">
-          <h3 className="font-bold">
+          <div className="flex justify-between"><h3 className="font-bold">
             {item.name}
-        
+        </h3>
             {item.variants.length > 0 && (
               <select
                 className="w-100 border rounded px-2 py-1 text-sm"
@@ -1070,15 +1271,8 @@ const printAdvanceBill = (bill) => {
                   </option>
                 ))}
               </select>
-            )}
-          
-          </h3>
-
-          {/* FIXED HEIGHT VARIANT */}
-          
+            )}</div>
         </div>
-
-        {/* BOTTOM (ALWAYS SAME POSITION) */}
         <div className="flex justify-between items-center mt-3">
           <span className="font-bold text-indigo-600">
             ₹{displayPrice}
@@ -1614,6 +1808,53 @@ const printAdvanceBill = (bill) => {
     </div>
   </div>
 )}
+ {isEditOpen && (
+          <Modal title="Restaurant Settings" onClose={() => setIsEditOpen(false)}>
+            <div className="space-y-3">
+
+              <input
+                value={tempName}
+                onChange={(e) => setTempName(e.target.value)}
+                placeholder="Restaurant Name"
+                className="w-full border p-2 rounded"
+              />
+
+              <textarea
+                value={tempAddress}
+                onChange={(e) => setTempAddress(e.target.value)}
+                placeholder="Address"
+                className="w-full border p-2 rounded"
+              />
+
+              <input
+                value={tempPhone}
+                onChange={(e) => setTempPhone(e.target.value)}
+                placeholder="Mobile Number"
+                className="w-full border p-2 rounded"
+              />
+
+              <input
+                value={tempGstin}
+                onChange={(e) => setTempGstin(e.target.value)}
+                placeholder="GSTIN"
+                className="w-full border p-2 rounded"
+              />
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsEditOpen(false)}
+                  className="px-3 py-1 bg-gray-200 rounded"
+                >Cancel</button>
+
+                <button
+                  onClick={handleSaveSettings}
+                  className="px-3 py-1 bg-indigo-600 text-white rounded"
+                >Save</button>
+              </div>
+
+            </div>
+          </Modal>
+        )}
       </AnimatePresence>
     </div>
   );

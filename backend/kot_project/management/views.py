@@ -843,19 +843,25 @@ class ReportSettingView(APIView):
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import RestaurantSetting
-from .serializers import RestaurantSettingSerializer
+
+from management.models import RestaurantSetting
+from management.serializers import RestaurantSettingSerializer
+
 
 class RestaurantSettingView(APIView):
+
     def get(self, request):
         setting = RestaurantSetting.objects.first()
 
         if not setting:
             setting = RestaurantSetting.objects.create(
-                restaurant_name="My Restaurant",
-                admin_email="",
-                tax_percentage=5
-            )
+            restaurant_name="My Restaurant",
+            admin_email="",
+            phone_number="",
+            gstin="",
+            tax_percentage=5,
+            address=""
+        )
 
         serializer = RestaurantSettingSerializer(setting)
         return Response(serializer.data)
@@ -866,11 +872,15 @@ class RestaurantSettingView(APIView):
         if not setting:
             serializer = RestaurantSettingSerializer(data=request.data)
         else:
-            serializer = RestaurantSettingSerializer(setting, data=request.data, partial=True)
+            serializer = RestaurantSettingSerializer(
+                setting,
+                data=request.data,
+                partial=True
+            )
 
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 from django.views.generic import TemplateView

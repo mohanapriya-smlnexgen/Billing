@@ -22,7 +22,7 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('send-otp/', SendEmailOTPView.as_view(), name='send_otp'),
      path('report-setting/', ReportSettingView.as_view(), name='report-setting'),
-    path('restaurant-setting/', RestaurantSettingView.as_view(), name='restaurant-setting'),
+    path('setting/', RestaurantSettingView.as_view(), name='restaurant-setting'),
     # === FOOD MENU: Custom CREATE Path (No auth required) ===
     path('create-food/', FoodItemViewSet.as_view({'post': 'create'}), name='create-food'),
     path('send-report/', TriggerReportView.as_view()),
