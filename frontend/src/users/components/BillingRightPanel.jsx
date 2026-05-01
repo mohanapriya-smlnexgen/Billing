@@ -205,10 +205,44 @@ const discountValue =
           <span>₹{Number(subtotal || 0).toFixed(2)}</span>
         </div>
 
-        <div className="flex justify-between">
-          <span>Tax ({taxPercentage}%)</span>
-          <span>₹{Number(tax || 0).toFixed(2)}</span>
-        </div>
+        <div className="flex justify-between items-center">
+  <span>Tax ({taxPercentage}%)
+     <button
+      onClick={() => setShowTaxEditor(!showTaxEditor)}
+      className="text-xs text-indigo-600 underline"
+    >
+      Edit
+    </button>
+  </span>
+  
+
+  <div className="flex items-center gap-2">
+    <span>₹{Number(tax || 0).toFixed(2)}</span>
+
+    {/* Edit Button */}
+   
+  </div>
+</div>
+
+{/* TAX EDIT INPUT */}
+{showTaxEditor && (
+  <div className="flex gap-2 mt-2">
+    <input
+      type="number"
+      value={taxPercentage}
+      onChange={(e) => setTaxPercentage(Number(e.target.value))}
+      className="border px-2 py-1 rounded w-full text-sm"
+      placeholder="Enter tax %"
+    />
+
+    <button
+      onClick={handleSaveTaxPercentage}
+      className="bg-indigo-600 text-white px-3 py-1 rounded text-sm"
+    >
+      Save
+    </button>
+  </div>
+)}
 
         {discount > 0 && (
   <div className="flex justify-between text-green-600">
