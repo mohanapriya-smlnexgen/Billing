@@ -1,7 +1,7 @@
 # cashier/admin.py
 
 from django.contrib import admin
-from .models import Customer, DiscountSetting, Order, OrderItem
+from .models import Customer, DiscountSetting, Order, OrderItem, TaxSetting
 from django.contrib import admin
 from .models import Order, OrderItem, Customer
 
@@ -95,3 +95,11 @@ class CustomerAdmin(admin.ModelAdmin):
 @admin.register(DiscountSetting)
 class DiscountAdmin(admin.ModelAdmin):
     list_display = ['discount_type', 'discount_value', 'min_amount', 'is_active']
+@admin.register(TaxSetting)
+class TaxSettingAdmin(admin.ModelAdmin):
+    list_display = ("enabled", "percentage", "updated_at")
+    list_display_links = ("updated_at",)   # 👈 clickable column
+    list_editable = ("enabled", "percentage")
+
+    def has_add_permission(self, request):
+        return not TaxSetting.objects.exists()

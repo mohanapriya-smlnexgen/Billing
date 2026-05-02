@@ -180,7 +180,8 @@ const PreOrderHistory = () => {
         <table className="w-full min-w-[900px]">
           <thead>
             <tr className="border-b text-gray-600 text-sm">
-              <th className="p-3 text-left">Order ID</th>
+              <th className="p-3 text-left">ID</th>
+              <th className="p-3 text-left">Order No</th>
               <th className="p-3 text-left">Customer</th>
               <th className="p-3 text-left">Phone</th>
               <th className="p-3 text-left">Total</th>
@@ -204,8 +205,8 @@ const PreOrderHistory = () => {
                   key={o.id}
                   className="border-b hover:bg-gray-50 text-sm"
                 >
-                 <td className="p-3 font-medium">#{o.order_id}</td>
-
+                 <td className="p-3 font-medium">{o.order_id}</td>
+<td className="p-3 font-medium">#{o.daily_order_number}</td>
                   <td className="p-3">
                     {o.customer?.name || "Guest"}
                   </td>

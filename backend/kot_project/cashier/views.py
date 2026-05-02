@@ -193,8 +193,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Not enough credits"}, status=400)
 
             # ───── TAX ─────
-            setting = RestaurantSetting.objects.first()
-            tax_percentage = setting.tax_percentage if setting else Decimal('5')
+            tax_obj = TaxSetting.objects.first()
+            tax_percentage = tax_obj.percentage if tax_obj and tax_obj.enabled else Decimal('0')
             tax_amount = (total * tax_percentage) / Decimal('100')           # Tax on subtotal (before discount)
 
             # ───── FINAL AMOUNT (CORRECT LOGIC) ─────
@@ -215,7 +215,10 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 remaining_amount = Decimal('0')
 
             status_value = 'advance_paid' if advance > 0 else 'pending'
+            payment_mode = data.get('payment_mode')
 
+            if payment_mode not in ['cash', 'card', 'upi']:
+                payment_mode = 'cash'
             # ───── CREATE ORDER ─────
             order = Order.objects.create(
                 customer=customer,
@@ -226,7 +229,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 tax_amount=tax_amount,
                 advance_paid=advance,
                 remaining_amount=remaining_amount,
-                payment_mode=data.get('payment_mode') or 'cash',
+                payment_mode=payment_mode,
                 is_bulk=data.get('is_bulk', False),
                 bulk_note=data.get('bulk_note', ''),
                 is_advance=data.get('is_advance', False),
@@ -268,7 +271,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Already paid"}, status=400)
 
         received = Decimal(str(request.data.get('received_amount', 0)))
-
+        payment_mode = request.data.get('payment_mode')
         if received <= 0:
             return Response({"detail": "Invalid payment amount"}, status=400)
 
@@ -280,7 +283,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
 
         if received < due:
             return Response({"detail": "Insufficient amount"}, status=400)
-
+        order.payment_mode = payment_mode
         # ✅ Add payment (important)
         order.received_amount += received
 
@@ -460,3 +463,26 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from django.db.models import Count
         return Customer.objects.annotate(order_count=Count('order')).order_by('-id')
+from .models import TaxSetting
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(['GET'])
+def get_tax(request):
+    tax, _ = TaxSetting.objects.get_or_create(id=1)
+
+    return Response({
+        "enabled": tax.enabled,
+        "percentage": tax.percentage
+    })
+
+
+@api_view(['POST'])
+def set_tax(request):
+    tax, _ = TaxSetting.objects.get_or_create(id=1)
+
+    tax.enabled = request.data.get("enabled", True)
+    tax.percentage = request.data.get("percentage", 5)
+    tax.save()
+
+    return Response({"message": "Tax updated"})

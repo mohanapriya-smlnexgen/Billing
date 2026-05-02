@@ -13,14 +13,15 @@ const OrderHistory = () => {
   const [typeFilter, setTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
   const [loading, setLoading] = useState(true);
-
+  const [paymentFilter, setPaymentFilter] = useState("all");
+const [showPaymentDropdown, setShowPaymentDropdown] = useState(false);
+useEffect(() => {
+  applyFilters();
+}, [search, statusFilter, typeFilter, dateFilter, paymentFilter, orders]);
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  useEffect(() => {
-    applyFilters();
-  }, [search, statusFilter, typeFilter, dateFilter, orders]);
 const getStatusBadge = (status) => {
     switch (status) {
       case "advance_paid":
@@ -62,7 +63,7 @@ const getStatusBadge = (status) => {
         );
       });
 
-      setOrders(relevantOrders);
+      setOrders(data);
     } catch (err) {
       console.error("Failed to fetch orders", err);
     } finally {
@@ -101,8 +102,14 @@ const getStatusBadge = (status) => {
         return orderDate === dateFilter;
       });
     }
-
+    // ✅ PAYMENT FILTER
+if (paymentFilter !== "all") {
+  data = data.filter(
+    (o) => (o.payment_mode || "").toLowerCase() === paymentFilter
+  );
+}
     setFiltered(data);
+
   };
 
   const getNumericValue = (value) => {
@@ -139,6 +146,7 @@ const getStatusBadge = (status) => {
   const exportToExcel = () => {
     const excelData = filtered.map((o) => ({
       OrderID: `#${o.order_id}`,
+      OrderNo: `#${o.daily_order_number || o.order_id}`, 
       Type: o.is_bulk ? "Bulk Order" : o.is_advance ? "Pre Order" : "Normal",
       Customer: o.customer?.name || "Guest",
       Phone: o.customer?.phone || "-",
@@ -147,6 +155,7 @@ const getStatusBadge = (status) => {
       Remaining: getNumericValue(o.remaining_amount ?? 
         (getNumericValue(o.custom_price || o.final_amount || o.total_amount) - getNumericValue(o.advance_paid))
       ),
+      PaymentMode: o.payment_mode || "N/A",   // ✅ NEW
       ScheduledTime: o.scheduled_time ? new Date(o.scheduled_time).toLocaleString() : "-",
       Status: o.status,
       CreatedAt: new Date(o.created_at).toLocaleString(),
@@ -167,7 +176,7 @@ const getStatusBadge = (status) => {
   }
 
   return (
-    <div className="p-2 bg-gray-50 min-h-screen">
+    <div className=" bg-gray-50 min-h-screen">
       {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-3 gap-4">
         <div>
@@ -289,78 +298,169 @@ const getStatusBadge = (status) => {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-3xl shadow border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b">
-                <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500">ORDER ID</th>
-                <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500">TYPE</th>
-                <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500">CUSTOMER</th>
-                <th className="px-6 py-5 text-right text-xs font-semibold text-gray-500">TOTAL</th>
-                <th className="px-6 py-5 text-right text-xs font-semibold text-gray-500">ADVANCE</th>
-                <th className="px-6 py-5 text-right text-xs font-semibold text-gray-500">REMAINING</th>
-                <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500">STATUS</th>
-                <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500">DATE</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="text-center py-20 text-gray-400">
-                    No orders found matching your filters
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((o) => {
-                  const total = getNumericValue(o.custom_price || o.final_amount || o.total_amount || 0);
-                  const remaining = o.remaining_amount !== null && o.remaining_amount !== undefined
-                    ? getNumericValue(o.remaining_amount)
-                    : total - getNumericValue(o.advance_paid || 0);
+     <div className="bg-white rounded-3xl shadow border border-gray-100 overflow-hidden">
+  <div className="overflow-x-auto">
+    <table className="w-full">
+      <thead>
+        <tr className="bg-gray-50 border-b text-center">
+          <th className="px-4 py-4 text-xs font-semibold text-gray-500">ID</th>
+          <th className="px-4 py-4 text-xs font-semibold text-gray-500">ORDER NO</th>
+          <th className="px-4 py-4 text-xs font-semibold text-gray-500">TYPE</th>
+          <th className="px-4 py-4 text-xs font-semibold text-gray-500 relative">
+  <div className="flex items-center justify-center gap-1 cursor-pointer"
+       onClick={() => setShowPaymentDropdown(!showPaymentDropdown)}>
+    PAYMENT
+    <span className="text-xs">▼</span>
+  </div>
 
-                  return (
-                    <tr key={o.order_id} className="hover:bg-gray-50 transition">
-                      <td className="px-6 py-5 font-mono font-semibold text-blue-600">
-                        #{o.order_id}
-                      </td>
-                      <td className="px-6 py-5">
-                        {o.is_bulk ? (
-                          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">BULK</span>
-                        ) : o.is_advance ? (
-                          <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">PRE-ORDER</span>
-                        ) : (
-                          <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">NORMAL</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="font-medium">{o.customer?.name || "Guest"}</div>
-                        <div className="text-xs text-gray-500">{o.customer?.phone || ""}</div>
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold">₹{total.toLocaleString('en-IN')}</td>
-                      <td className="px-6 py-5 text-right text-amber-600 font-medium">
-                        ₹{getNumericValue(o.advance_paid || 0).toLocaleString('en-IN')}
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold">
-                        <span className={remaining > 0 ? "text-red-600" : "text-green-600"}>
-                          ₹{remaining.toLocaleString('en-IN')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className={`px-3 py-1 text-xs font-bold rounded-full ${getStatusBadge(o.status)}`}>
-                          {o.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-500">
-                        {new Date(o.created_at).toLocaleDateString('en-IN')}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+  {showPaymentDropdown && (
+    <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-white shadow-lg border rounded-xl z-10 w-32 text-left">
+      <div
+        onClick={() => { setPaymentFilter("all"); setShowPaymentDropdown(false); }}
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+      >
+        All
       </div>
+      <div
+        onClick={() => { setPaymentFilter("cash"); setShowPaymentDropdown(false); }}
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+      >
+        Cash
+      </div>
+      <div
+        onClick={() => { setPaymentFilter("card"); setShowPaymentDropdown(false); }}
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+      >
+        Card
+      </div>
+      <div
+        onClick={() => { setPaymentFilter("upi"); setShowPaymentDropdown(false); }}
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+      >
+        UPI
+      </div>
+    </div>
+  )}
+</th>
+          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">CUSTOMER</th>
+          <th className="px-4 py-4 text-right text-xs font-semibold text-gray-500">TOTAL</th>
+          <th className="px-4 py-4 text-right text-xs font-semibold text-gray-500">ADVANCE</th>
+          <th className="px-4 py-4 text-right text-xs font-semibold text-gray-500">REMAINING</th>
+          <th className="px-4 py-4 text-xs font-semibold text-gray-500">STATUS</th>
+          <th className=" py-4 text-xs font-semibold text-gray-500">DATE</th>
+        </tr>
+      </thead>
+
+      <tbody className="divide-y text-center">
+        {filtered.length === 0 ? (
+          <tr>
+            <td colSpan="10" className="py-16 text-gray-400">
+              No orders found matching your filters
+            </td>
+          </tr>
+        ) : (
+          filtered.map((o, index) => {
+            const total = getNumericValue(
+              o.custom_price || o.final_amount || o.total_amount || 0
+            );
+
+            const remaining =
+              o.remaining_amount !== null && o.remaining_amount !== undefined
+                ? getNumericValue(o.remaining_amount)
+                : total - getNumericValue(o.advance_paid || 0);
+
+            return (
+              <tr key={o.order_id} className="hover:bg-gray-50 transition">
+                {/* S.No */}
+                <td className="px-4 py-4 font-semibold text-gray-700">
+                  {o.order_id}
+                </td>
+
+                {/* Order No */}
+                <td className="px-4 py-4 font-mono font-semibold text-blue-600">
+                  #{o.daily_order_number}
+                </td>
+
+                {/* Type */}
+                <td className="px-4 py-4">
+                  {o.is_bulk ? (
+                    <span className="px-3 py-1 text-purple-700 text-xs font-bold">
+                      BULK
+                    </span>
+                  ) : o.is_advance ? (
+                    <span className="px-3 py-1 text-blue-700 text-xs font-bold">
+                      PRE-ORDER
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 text-gray-600 text-xs font-bold">
+                      NORMAL
+                    </span>
+                  )}
+                </td>
+
+                {/* Payment */}
+                <td className="px-4 py-4">
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold uppercase">
+                    {o.payment_mode || "N/A"}
+                  </span>
+                </td>
+
+                {/* Customer */}
+                <td className="px-6 py-4 text-left">
+                  <div className="font-medium">
+                    {o.customer?.name || "Guest"}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {o.customer?.phone || ""}
+                  </div>
+                </td>
+
+                {/* Total */}
+                <td className="px-4 py-4 text-right font-semibold">
+                  ₹{total.toLocaleString("en-IN")}
+                </td>
+
+                {/* Advance */}
+                <td className="px-4 py-4 text-right text-amber-600 font-medium">
+                  ₹{getNumericValue(o.advance_paid || 0).toLocaleString("en-IN")}
+                </td>
+
+                {/* Remaining */}
+                <td className="px-4 py-4 text-right font-semibold">
+                  <span
+                    className={
+                      remaining > 0 ? "text-red-600" : "text-green-600"
+                    }
+                  >
+                    ₹{remaining.toLocaleString("en-IN")}
+                  </span>
+                </td>
+
+                {/* Status */}
+                <td className="px-4 py-4">
+                  <span
+                    className={`px-3 py-1 text-xs font-bold rounded-full ${getStatusBadge(
+                      o.status
+                    )}`}
+                  >
+                    {o.status}
+                  </span>
+                </td>
+
+                {/* Date */}
+                <td className=" py-4 text-sm text-gray-500">
+                  {new Date(o.created_at).toLocaleDateString("en-IN")}
+                </td>
+              </tr>
+            );
+          })
+        )}
+      </tbody>
+    </table>
+    
+  </div>
+
+</div>
     </div>
   );
 };

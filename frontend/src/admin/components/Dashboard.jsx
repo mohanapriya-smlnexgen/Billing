@@ -327,7 +327,39 @@ const DashboardHome = ({ kots, user }) => {
     type: "percentage",
     value: 0
   });
+ const [tax, setTax] = React.useState({
+  enabled: true,
+  percentage: 5
+});
+useEffect(() => {
+  const fetchTax = async () => {
+    try {
+      const res = await API.get("/settings/get_tax/");
+      setTax(res.data);
+    } catch (err) {
+      console.error("Failed to fetch tax", err);
+    }
+  };
+
+  fetchTax();
+}, []);
 const [saving, setSaving] = React.useState(false);
+const handleSaveTax = async () => {
+  try {
+    setSaving(true);
+
+    await API.post("/settings/set_tax/", {
+      enabled: tax.enabled,
+      percentage: tax.percentage
+    });
+
+    alert("Tax settings saved!");
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setSaving(false);
+  }
+};
 const handleClearDiscount = async () => {
   try {
     setSaving(true);
@@ -351,6 +383,7 @@ const handleClearDiscount = async () => {
     setSaving(false);
   }
 };
+
 const handleSaveDiscount = async () => {
   setSaving(true);
 
@@ -407,7 +440,7 @@ const handleSaveDiscount = async () => {
       </div>
 
       {/* 🔥 New Section: Top Selling + Discount */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 
         {/* 🔹 Top Selling Items */}
         <div className="bg-white rounded-2xl shadow-lg p-5">
@@ -436,14 +469,14 @@ const handleSaveDiscount = async () => {
 
         {/* 🔹 Discount Settings */}
         <div className="bg-white rounded-2xl shadow-lg p-5">
-<div className="flex  gap-10">
+<div className="flex  gap-5">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
             💸 Discount Settings
           </h3> 
           <button
     onClick={handleClearDiscount}
     disabled={saving}
-    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
+    className="flex-1 bg-red-200 text-red-700 py-2 rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
   >
     Clear Discount
   </button>
@@ -498,6 +531,64 @@ const handleSaveDiscount = async () => {
  
           </div>
         </div>
+        {/* 🔹 Tax Settings */}
+<div className="bg-white rounded-2xl shadow-lg p-5">
+  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+    🧾 Tax Settings
+  </h3>
+
+  <div className="space-y-4">
+
+    {/* Toggle */}
+    <div className="flex justify-between items-center">
+      <label className="text-sm text-gray-600">Enable Tax</label>
+      <button
+        onClick={() =>
+          setTax({ ...tax, enabled: !tax.enabled })
+        }
+        className={`px-3 py-1 rounded-full text-xs font-medium ${
+          tax.enabled
+            ? "bg-green-100 text-green-700"
+            : "bg-gray-200 text-gray-600"
+        }`}
+      >
+        {tax.enabled ? "ON" : "OFF"}
+      </button>
+    </div>
+
+    {/* Percentage */}
+    {tax.enabled && (
+      <div>
+        <label className="text-sm text-gray-600">Tax Percentage (%)</label>
+        <input
+          type="number"
+          value={tax.percentage}
+          onChange={(e) =>
+            setTax({ ...tax, percentage: Number(e.target.value) })
+          }
+          className="w-full mt-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+          placeholder="Enter tax %"
+        />
+      </div>
+    )}
+
+    {/* Preview */}
+    <div className="bg-indigo-50 p-3 rounded-lg text-sm text-indigo-700">
+      {tax.enabled
+        ? `Tax applied: ${tax.percentage}%`
+        : "Tax is disabled"}
+    </div>
+
+    {/* Save */}
+    <button
+      onClick={handleSaveTax}
+      disabled={saving}
+      className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+    >
+      {saving ? "Saving..." : "Save Tax Settings"}
+    </button>
+  </div>
+</div>
       </div>
 
       {/* Recent Orders (Updated - removed table column) */}
