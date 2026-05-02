@@ -122,10 +122,10 @@ const [restaurantGstin, setRestaurantGstin] = useState("");
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
   );
-  const [taxPercentage, setTaxPercentage] = useState(
-    Number(localStorage.getItem("tax_percentage")) || 0
-  );
-  const [showTaxEditor, setShowTaxEditor] = useState(false);
+const [taxConfig, setTaxConfig] = useState({
+  enabled: false,
+  percentage: 0
+});
   const [currentTime, setCurrentTime] = useState(new Date());
 const [isEditOpen, setIsEditOpen] = useState(false);
 const [tempName, setTempName] = useState("");
@@ -184,6 +184,19 @@ useEffect(() => {
 
   fetchSettings();
 }, []);
+useEffect(() => {
+  const fetchTax = async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/settings/get_tax/`);
+      setTaxConfig(res.data);
+    } catch (err) {
+      console.error("Failed to fetch tax", err);
+    }
+  };
+
+  fetchTax();
+}, []);
+// const tax = taxEnabled ? subtotal * (taxPercentage / 100) : 0;
   const fetchPreOrderAlerts = async () => {
     try {
       const res = await axios.get(BILL_API);
@@ -407,10 +420,10 @@ const handleSaveSettings = async () => {
     }
   };
 
-  const handleSaveTaxPercentage = () => {
-    localStorage.setItem("tax_percentage", taxPercentage);
-    setShowTaxEditor(false);
-  };
+  // const handleSaveTaxPercentage = () => {
+  //   localStorage.setItem("tax_percentage", taxPercentage);
+  //   setShowTaxEditor(false);
+  // };
 
   const fetchDiscount = async (amount) => {
     try {
@@ -428,7 +441,7 @@ const handleSaveSettings = async () => {
       const response = await axios.get(SETTING_API);
       setRestaurantName(response.data.restaurant_name || "My Restaurant");
       setAdminEmail(response.data.admin_email || "");
-      setTaxPercentage(Number(response.data.tax_percentage) || 5);
+      // setTaxPercentage(Number(response.data.tax_percentage) || 5);
     } catch (error) {
       console.error(error);
     }
@@ -452,6 +465,7 @@ const handleSaveSettings = async () => {
         food_id: item.id || index + 1,
         name: item.food_name,
         price: Number(item.price),
+        description: item.description || "", 
         category: item.category?.toLowerCase() || "uncategorized",
         subcategory: item.subcategory?.toLowerCase() || "general", 
         variants: item.variants || []   // ✅ ADD THIS
@@ -541,18 +555,21 @@ const filteredItems = useMemo(() => {
     }
   }, [subtotal]);
 
- const tax = subtotal * (taxPercentage / 100);
+//  const tax = subtotal * (taxPercentage / 100);
 const discountValue =
   discountType === "percentage"
     ? (subtotal * discount) / 100
     : discount;
 
-const subtotalAfterDiscount = subtotal - discountValue;         // ← Important
-const computedTotal = subtotalAfterDiscount + tax - credit;  // ← Fixed order
-const finalTotal = Number(
-  orderType !== "normal" && customPrice > 0
-    ? customPrice
-    : Math.max(computedTotal, 0)
+const subtotalAfterDiscount = subtotal - discountValue;
+
+const tax = taxConfig.enabled
+  ? (subtotalAfterDiscount * taxConfig.percentage) / 100
+  : 0;
+
+const finalTotal = Math.max(
+  subtotalAfterDiscount + tax - credit,
+  0
 );
   const dueAmount = (selectedBill?.custom_price || selectedBill?.final_amount || finalTotal) - (selectedBill?.advance_paid || selectedBill?.received_amount || 0);
   const balance = cashReceived - dueAmount;
@@ -582,7 +599,7 @@ const finalTotal = Number(
         custom_price: customPrice > 0 ? customPrice : null,
         scheduled_time: formattedScheduledTime,
         advance_paid: advanceAmount || 0,
-        payment_mode: advanceAmount > 0 ? "cash" : null,
+        payment_mode: paymentMode || "cash",
         status: "pending",
         cart: cart.map((item) => {
           let qty = item.quantity;
@@ -604,7 +621,10 @@ const finalTotal = Number(
           };
         }),
       };
-
+     console.log("PAYLOAD:", {
+  received_amount: cashReceived,
+  payment_mode: paymentMode,
+});
       const res = await axios.post(`${BILL_API}create_order/`, payload);
       setSelectedBill(null);
       setShowPendingModal(true);
@@ -638,11 +658,14 @@ const finalTotal = Number(
 const printAdvanceBill = (bill) => {
   const printWindow = window.open("", "_blank");
   const subtotal = Number(bill.total_amount || bill.custom_price || 0);
-  const tax = subtotal * (taxPercentage / 100);
+  
   const discount =
   bill.discount_type === "percentage" || bill.discount > 0 && !bill.discount_amount
     ? (subtotal * Number(bill.discount || 0)) / 100
     : Number(bill.discount_amount || 0);
+   const tax = taxConfig.enabled
+  ? (subtotalAfterDiscount * taxConfig.percentage) / 100
+  : 0;
   const total = subtotal - discount + tax;
 
   const advance = Number(bill.advance_paid || bill.received_amount || 0);
@@ -732,10 +755,12 @@ ${discount > 0 ? `
   <span>-₹${discount.toFixed(2)}</span>
 </div>` : ""}
 
+${taxConfig.enabled ? `
 <div class="row">
-  <span>Tax</span>
+  <span>Tax (${taxConfig.percentage}%)</span>
   <span>₹${tax.toFixed(2)}</span>
 </div>
+` : ""}
 
 <div class="line"></div>
 
@@ -836,18 +861,22 @@ const printBill = (billData) => {
 
   const subtotal = Number(bill.total_amount || bill.custom_price || 0);
 
-  const tax = subtotal * (taxPercentage / 100);
-
   const discount =
-    bill.discount_type === "percentage" || (bill.discount > 0 && !bill.discount_amount)
+    bill.discount_type === "percentage" ||
+    (bill.discount > 0 && !bill.discount_amount)
       ? (subtotal * Number(bill.discount || 0)) / 100
       : Number(bill.discount_amount || 0);
 
-  const credit = Number(bill.credit_used || 0);
+  const subtotalAfterDiscount = subtotal - discount;
+
+  const tax = taxConfig.enabled
+    ? (subtotalAfterDiscount * taxConfig.percentage) / 100
+    : 0;
+
   const advance = Number(bill.advance_paid || 0);
   const received = Number(bill.received_amount || 0);
 
-  const total = subtotal - discount + tax;
+  const total = subtotalAfterDiscount + tax;
   const paid = advance + received;
   const balance = total - paid;
 
@@ -861,51 +890,26 @@ const printBill = (billData) => {
     margin: 0;
   }
 
-body {
-  width: 280px;
-  margin: 0 auto;
-  padding: 8px;
-  font-family: monospace;
-  font-size: 12px;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-  line-height: 1.2;
-}
-
-/* IMPORTANT: remove default spacing */
-h3 {
-  margin: 0;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1.2;
-}
-
-
-  * {
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: grayscale;
+  body {
+    width: 70mm;
+    height: auto;
+    margin: 0 auto;
+    padding: 5px;
+    font-family: monospace;
+    font-size: 11px;
   }
 
-.center {
-  text-align: center;
-}
-
-.center div {
-  margin: 0;
-  padding: 1px 0;
-  line-height: 1.1;
-  font-size: 12px;
-}
+  .center { text-align: center; }
 
   .row {
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .line {
     border-top: 1px dashed #000;
-    margin: 6px 0;
+    margin: 5px 0;
   }
 
   table {
@@ -914,30 +918,35 @@ h3 {
   }
 
   th, td {
-    font-size: 12px;
+    font-size: 11px;
     padding: 2px 0;
   }
 
   th {
     border-bottom: 1px solid #000;
   }
+
+  .item { width: 50%; }
+  .qty { width: 15%; text-align: center; }
+  .amt { width: 35%; text-align: right; }
+
 </style>
 </head>
 
 <body>
 
 <div class="center">
-  <h3>${restaurantName}</h3>
-  <div>${address || ""}</div>
-  <div>Mob: ${restaurantPhone || ""}</div>
-  <div>GSTIN: ${restaurantGstin || ""}</div>
+  <b>${restaurantName}</b><br/>
+  ${address || ""}<br/>
+  Mob: ${restaurantPhone || ""}<br/>
+  GSTIN: ${restaurantGstin || ""}
 </div>
 
 <div class="line"></div>
 
 <div class="row">
   <span>Date: ${new Date().toLocaleDateString()}</span>
-  <span>Time: ${new Date().toLocaleTimeString()}</span>
+  <span>${new Date().toLocaleTimeString()}</span>
 </div>
 
 <div class="row">
@@ -945,36 +954,40 @@ h3 {
   <span>${bill.order_type || "Normal"}</span>
 </div>
 
+<!-- ✅ CUSTOMER DETAILS ADDED -->
+<div class="row">
+  <span>Customer:</span>
+  <span>${bill.customer?.name || "Guest"}</span>
+</div>
+
+<div class="row">
+  <span>Mobile:</span>
+  <span>${bill.customer?.phone || "-"}</span>
+</div>
+
 <div class="line"></div>
 
 <table>
   <thead>
     <tr>
-      <th>Item</th>
-      <th>Qty</th>
-      <th>Price</th>
-      <th>Amt</th>
+      <th class="item">Item</th>
+      <th class="qty">Qty</th>
+      <th class="amt">Amt</th>
     </tr>
   </thead>
 
   <tbody>
     ${(bill.items || []).map(i => `
       <tr>
-        <td>${i.name}</td>
-        <td>${i.quantity}</td>
-        <td>${i.price}</td>
-        <td>${(i.price * i.quantity).toFixed(2)}</td>
+        <td class="item">${i.name}</td>
+        <td class="qty">${i.quantity}</td>
+        <td class="amt">${(i.price * i.quantity).toFixed(2)}</td>
       </tr>
     `).join("")}
   </tbody>
 </table>
 
 <div class="line"></div>
-
-<div class="row">
-  <span>Total Qty</span>
-  <span>${(bill.items || []).reduce((a, b) => a + b.quantity, 0)}</span>
-</div>
 
 <div class="row">
   <span>Sub Total</span>
@@ -987,10 +1000,11 @@ ${discount > 0 ? `
   <span>-₹${discount.toFixed(2)}</span>
 </div>` : ""}
 
+${taxConfig.enabled ? `
 <div class="row">
-  <span>Tax</span>
+  <span>Tax (${taxConfig.percentage}%)</span>
   <span>₹${tax.toFixed(2)}</span>
-</div>
+</div>` : ""}
 
 <div class="line"></div>
 
@@ -1007,11 +1021,11 @@ ${advance > 0 ? `
 
 ${received > 0 ? `
 <div class="row">
-  <span>Paid Now</span>
+  <span>Paid</span>
   <span>₹${received.toFixed(2)}</span>
 </div>` : ""}
 
-<div class="row" style="font-weight:bold">
+<div class="row">
   <span>Balance</span>
   <span>₹${balance.toFixed(2)}</span>
 </div>
@@ -1030,33 +1044,162 @@ ${received > 0 ? `
   printWindow.print();
 };
   const printKOT = () => {
-    const kotWindow = window.open("", "_blank");
-    kotWindow.document.write(`
-      <html>
-      <head>
-        <title>Kitchen Order Ticket</title>
-        <style>
-          body { font-family: 'Courier New', monospace; width: 280px; margin: auto; padding: 20px; }
-          .header { text-align: center; border-bottom: 2px solid #000; margin-bottom: 15px; }
-          .item { margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h2>KITCHEN ORDER TICKET</h2>
-          <p>Order #${selectedBill?.order_id || "New"}</p>
-          <p>${new Date().toLocaleString()}</p>
-        </div>
-        ${cart.map((i) => `<div class="item"><strong>${i.quantity}x</strong> ${i.name}</div>`).join("")}
-        <div class="header" style="margin-top: 20px;">
-          <p><strong>PRIORITY: IMMEDIATE</strong></p>
-        </div>
-      </body>
-      </html>
-    `);
-    kotWindow.document.close();
-    kotWindow.print();
-  };
+  if (!selectedBill && cart.length === 0) return;
+
+  const kotWindow = window.open("", "_blank");
+
+  const items = selectedBill?.items || cart;
+
+  const orderId = selectedBill?.order_id || selectedBill?.bill_id || Math.floor(1000 + Math.random() * 9000);;
+  const customerNameVal = selectedBill?.customer?.name || customerName || "Guest";
+  const customerPhoneVal = selectedBill?.customer?.phone || customerPhone || "-";
+
+  const orderTime = selectedBill?.created_at
+    ? new Date(selectedBill.created_at)
+    : new Date();
+
+  kotWindow.document.write(`
+  <html>
+  <head>
+    <title>KOT</title>
+    <style>
+      body {
+        font-family: monospace;
+        width: 300px;
+        margin: auto;
+        padding: 10px;
+        font-size: 12px;
+      }
+
+      .center { text-align: center; }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+      }
+
+      .line {
+        border-top: 1px dashed #000;
+        margin: 8px 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        font-size: 12px;
+        padding: 4px 0;
+      }
+
+      th {
+        border-bottom: 1px solid #000;
+      }
+
+      .big {
+        font-size: 16px;
+        font-weight: bold;
+      }
+
+      .bold {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+
+  <body>
+
+  <!-- 🔥 SHOP DETAILS -->
+  <div class="center">
+    <div class="big">${restaurantName}</div>
+    <div>${address || ""}</div>
+    <div>Mob: ${restaurantPhone || ""}</div>
+    <div>GSTIN: ${restaurantGstin || ""}</div>
+  </div>
+
+  <div class="line"></div>
+
+  <!-- 🔥 KOT HEADER -->
+  <div class="center bold">
+    KITCHEN ORDER TICKET (KOT)
+  </div>
+
+  <div class="line"></div>
+
+  <!-- 🔥 ORDER INFO -->
+  <div class="row">
+    <span>KOT No:</span>
+    <span>#${orderId}</span>
+  </div>
+
+  <div class="row">
+    <span>Date:</span>
+    <span>${orderTime.toLocaleDateString()}</span>
+  </div>
+
+  <div class="row">
+    <span>Time:</span>
+    <span>${orderTime.toLocaleTimeString()}</span>
+  </div>
+
+  <div class="line"></div>
+
+  <!-- 🔥 CUSTOMER -->
+  <div class="row">
+    <span>Customer:</span>
+    <span>${customerNameVal}</span>
+  </div>
+
+  <div class="row">
+    <span>Mobile:</span>
+    <span>${customerPhoneVal}</span>
+  </div>
+
+  <div class="line"></div>
+
+  <!-- 🔥 ITEMS -->
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th style="text-align:right;">Qty</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      ${items.map(i => `
+        <tr>
+          <td>${i.name}</td>
+          <td style="text-align:right;" class="bold">${i.quantity}</td>
+        </tr>
+      `).join("")}
+    </tbody>
+  </table>
+
+  <div class="line"></div>
+
+  <!-- 🔥 TOTAL QTY -->
+  <div class="row bold">
+    <span>Total Items</span>
+    <span>${items.reduce((a,b)=>a + Number(b.quantity || 0), 0)}</span>
+  </div>
+
+  <div class="line"></div>
+
+  <!-- 🔥 FOOTER -->
+  <div class="center bold">
+    *** PREPARE IMMEDIATELY ***
+  </div>
+
+  </body>
+  </html>
+  `);
+
+  kotWindow.document.close();
+  kotWindow.print();
+};
 
   return (
     <div className="h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
@@ -1272,12 +1415,12 @@ ${received > 0 ? `
                 ))}
               </select>
             )}</div>
+            <p className=" text-sm text-gray-600">{item.description}</p>
         </div>
-        <div className="flex justify-between items-center mt-3">
+        <div className="flex justify-between items-center mt-2">
           <span className="font-bold text-indigo-600">
             ₹{displayPrice}
           </span>
-
           <button
             onClick={() =>
               addToCart({
@@ -1308,14 +1451,13 @@ ${received > 0 ? `
   updateQty={updateQty}
   setCart={setCart}
   setSelectedBill={setSelectedBill}
+  setPaymentMode={setPaymentMode}
+  paymentMode={paymentMode}
   menuItems={menuItems}
   subtotal={subtotal}
-  showTaxEditor={showTaxEditor}
-  setShowTaxEditor={setShowTaxEditor}
   discountType={discountType }
   setDiscountType={setDiscountType}
   tax={tax}
-  taxPercentage={taxPercentage}
   discount={discount}
   setDiscount={setDiscount}
   credit={credit}
@@ -1323,21 +1465,13 @@ ${received > 0 ? `
   finalTotal={finalTotal}
   advanceAmount={advanceAmount}
    discountType={discountType}
+   
   setDiscountType={setDiscountType}
   selectedBill={selectedBill}
-
-  showTaxEditor={showTaxEditor}
-  setShowTaxEditor={setShowTaxEditor}
-  taxPercentageValue={taxPercentage}
-  setTaxPercentage={setTaxPercentage}
-  handleSaveTaxPercentage={() => {
-    localStorage.setItem("tax_percentage", taxPercentage);
-    setShowTaxEditor(false);
-  }}
-
   handleGenerateBill={handleGenerateBill}
   setShowPaymentModal={setShowPaymentModal}
-
+taxEnabled={taxConfig.enabled}
+taxPercentage={taxConfig.percentage}
   setShowPendingModal={setShowPendingModal}
   printKOT={printKOT}
   printBill={printBill}
@@ -1741,7 +1875,10 @@ ${received > 0 ? `
           {['cash', 'upi', 'card'].map((mode) => (
             <button
               key={mode}
-              onClick={() => setPaymentMode(mode)}
+              onClick={() =>{ setPaymentMode(mode)
+                 console.log("Clicked:", mode)}
+              }
+              
               className={`py-2 rounded-xl text-xs font-semibold uppercase border transition ${
                 paymentMode === mode
                   ? 'bg-indigo-600 text-white border-indigo-600'

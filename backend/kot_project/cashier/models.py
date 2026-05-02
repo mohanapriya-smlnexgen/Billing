@@ -3,7 +3,7 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from management.models import AdminUser
-
+from django.db import transaction
 class Customer(models.Model):
     name = models.CharField(max_length=100)
     phone = models.CharField(max_length=15, unique=True)
@@ -38,7 +38,11 @@ class Order(models.Model):
     credit_used = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     final_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    payment_mode = models.CharField(max_length=20, default='cash')
+    payment_mode = models.CharField(
+    max_length=20,
+    choices=[('cash', 'Cash'), ('card', 'Card'), ('upi', 'UPI')],
+    default='cash'
+)
     received_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -59,9 +63,24 @@ class Order(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
 
     refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    daily_order_number = models.IntegerField(editable=False, null=True, blank=True)  # NEW FIELD
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            today = timezone.localdate()
 
+            with transaction.atomic():
+                last_order = Order.objects.select_for_update().filter(
+                    created_at__date=today
+                ).order_by('-daily_order_number').first()
+
+                if last_order and last_order.daily_order_number:
+                    self.daily_order_number = last_order.daily_order_number + 1
+                else:
+                    self.daily_order_number = 1
+
+        super().save(*args, **kwargs)
     def __str__(self):
-        return f"Order #{self.order_id}"
+        return f"Order #{self.daily_order_number} ({self.created_at.date()})"
     def balance_amount(self):
         return self.received_amount - self.final_amount
 
@@ -90,3 +109,17 @@ class DiscountSetting(models.Model):
     discount_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     min_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
+class TaxSetting(models.Model):
+    enabled = models.BooleanField(default=True)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=5.00)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Tax: {self.percentage}% ({'ON' if self.enabled else 'OFF'})"
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            existing = TaxSetting.objects.first()
+            if existing:
+                self.pk = existing.pk  # overwrite instead of creating new
+        super().save(*args, **kwargs)

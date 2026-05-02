@@ -44,9 +44,9 @@ class Command(BaseCommand):
             ws = wb.active
             ws.title = "Daily Sales Report"
 
-            # Headers (UPDATED)
             headers = [
                 "Order ID",
+                "Order No",
                 "Order Type",
                 "Customer Name",
                 "Phone",
@@ -57,9 +57,13 @@ class Command(BaseCommand):
                 "Discount",
                 "Tax",
                 "Final Amount",
+                "Advance Paid",
+                "Remaining Amount",
                 "Cash Received",
                 "Change",
                 "Payment Mode",
+                "Scheduled Time",
+                "Created At",
                 "Status"
             ]
 
@@ -82,18 +86,23 @@ class Command(BaseCommand):
             card_count = 0
             upi_count = 0
 
-            # Process orders
             for order in orders:
 
                 subtotal = float(order.total_amount or 0)
                 discount = float(order.discount_amount or 0)
                 final = float(order.final_amount or subtotal)
 
-                # Correct tax calculation
                 tax = final - (subtotal - discount)
 
                 received = float(order.received_amount or 0)
                 change = received - final
+
+                advance = float(order.advance_paid or 0)
+                remaining = (
+                    float(order.remaining_amount)
+                    if order.remaining_amount is not None
+                    else (final - advance)
+                )
 
                 total_sales += final
                 total_tax += tax
@@ -121,43 +130,75 @@ class Command(BaseCommand):
                 customer_name = order.customer.name if order.customer else "Guest"
                 customer_phone = order.customer.phone if order.customer else "-"
 
-                # 🔥 Combine items into one field
-                items_list = []
-                for item in order.items.all():
-                    items_list.append(f"{item.name}-{item.quantity}")
-
+                # Items
+                items_list = [
+                    f"{item.name}-{item.quantity}"
+                    for item in order.items.all()
+                ]
                 items_combined = ", ".join(items_list)
 
-                # Write row (ONE ROW PER ORDER)
-                ws.cell(row=row, column=1, value=order.order_id)
-                ws.cell(row=row, column=2, value=order_type)
-                ws.cell(row=row, column=3, value=customer_name)
-                ws.cell(row=row, column=4, value=customer_phone)
-                ws.cell(row=row, column=5, value=order.paid_at.strftime("%d-%m-%Y"))
-                ws.cell(row=row, column=6, value=order.paid_at.strftime("%I:%M %p"))
-                ws.cell(row=row, column=7, value=items_combined)
+                # ✅ FIX ORDER NUMBER
+                order_no = getattr(order, "daily_order_number", None)
+                if not order_no:
+                    order_no = order.order_id
 
-                ws.cell(row=row, column=8, value=subtotal)
-                ws.cell(row=row, column=9, value=discount)
-                ws.cell(row=row, column=10, value=round(tax, 2))
-                ws.cell(row=row, column=11, value=final)
-                ws.cell(row=row, column=12, value=received)
-                ws.cell(row=row, column=13, value=round(change, 2))
-                ws.cell(row=row, column=14, value=order.payment_mode)
-                ws.cell(row=row, column=15, value=order.status)
+                # ✅ FIX TIME (convert to local IST)
+                local_paid = timezone.localtime(order.paid_at)
+
+                # WRITE DATA
+                ws.cell(row=row, column=1, value=f"#{order.order_id}")
+                ws.cell(row=row, column=2, value=f"#{order_no}")
+                ws.cell(row=row, column=3, value=order_type)
+                ws.cell(row=row, column=4, value=customer_name)
+                ws.cell(row=row, column=5, value=customer_phone)
+
+                ws.cell(row=row, column=6, value=local_paid.strftime("%d-%m-%Y"))
+                ws.cell(row=row, column=7, value=local_paid.strftime("%I:%M %p"))
+
+                ws.cell(row=row, column=8, value=items_combined)
+
+                ws.cell(row=row, column=9, value=subtotal)
+                ws.cell(row=row, column=10, value=discount)
+                ws.cell(row=row, column=11, value=round(tax, 2))
+                ws.cell(row=row, column=12, value=final)
+
+                ws.cell(row=row, column=13, value=advance)
+                ws.cell(row=row, column=14, value=round(remaining, 2))
+
+                ws.cell(row=row, column=15, value=received)
+                ws.cell(row=row, column=16, value=round(change, 2))
+                ws.cell(row=row, column=17, value=order.payment_mode)
+
+                # Scheduled Time (local)
+                ws.cell(
+                    row=row,
+                    column=18,
+                    value=timezone.localtime(order.scheduled_time).strftime("%d-%m-%Y %I:%M %p")
+                    if order.scheduled_time else "-"
+                )
+
+                # Created At (local)
+                ws.cell(
+                    row=row,
+                    column=19,
+                    value=timezone.localtime(order.created_at).strftime("%d-%m-%Y %I:%M %p")
+                    if order.created_at else "-"
+                )
+
+                ws.cell(row=row, column=20, value=order.status)
 
                 row += 1
 
-            # Summary section
+            # SUMMARY
             row += 2
 
             summary_data = [
                 ["Total Orders", total_orders],
-                ["Total Sales (Final)", round(total_sales, 2)],
+                ["Total Sales", round(total_sales, 2)],
                 ["Total Discount", round(total_discount, 2)],
                 ["Total Tax", round(total_tax, 2)],
                 ["Total Received", round(total_received, 2)],
-                ["Total Change Given", round(total_change, 2)],
+                ["Total Change", round(total_change, 2)],
                 ["Cash Payments", cash_count],
                 ["Card Payments", card_count],
                 ["UPI Payments", upi_count],
@@ -168,7 +209,7 @@ class Command(BaseCommand):
                 ws.cell(row=row, column=2, value=value)
                 row += 1
 
-            # Auto width
+            # Auto column width
             for column_cells in ws.columns:
                 max_length = 0
                 column = column_cells[0].column_letter
@@ -192,14 +233,11 @@ class Command(BaseCommand):
             email = EmailMessage(
                 subject=f"Daily Sales Report - {today}",
                 body=(
-                    f"Hello Admin,\n\n"
-                    f"Daily Report Summary:\n\n"
                     f"Orders: {total_orders}\n"
                     f"Sales: ₹{round(total_sales, 2)}\n"
                     f"Discount: ₹{round(total_discount, 2)}\n"
                     f"Tax: ₹{round(total_tax, 2)}\n"
-                    f"Received: ₹{round(total_received, 2)}\n\n"
-                    f"Regards,\nBilling System"
+                    f"Received: ₹{round(total_received, 2)}"
                 ),
                 from_email=settings.EMAIL_HOST_USER,
                 to=[report_setting.email],
@@ -208,7 +246,6 @@ class Command(BaseCommand):
             email.attach_file(file_path)
             email.send()
 
-            # Delete file
             if os.path.exists(file_path):
                 os.remove(file_path)
 

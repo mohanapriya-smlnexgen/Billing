@@ -26,7 +26,6 @@ export const BillingRightPanel = (props) => {
     setCart,
     setSelectedBill,
     subtotal,
-    taxPercentage,
     showPendingModal,
     setShowPendingModal,
     savedBills,
@@ -35,13 +34,7 @@ export const BillingRightPanel = (props) => {
     tax,
     discount,
     advanceAmount,
-    finalTotal,
     selectedBill,
-    showTaxEditor,
-    setShowTaxEditor,
-    taxPercentageValue,
-    setTaxPercentage,
-    handleSaveTaxPercentage,
     handleGenerateBill,
     setShowPaymentModal,
     printBill,
@@ -72,16 +65,29 @@ export const BillingRightPanel = (props) => {
     externalOrderId,
     discountType,
     setDiscountType,
+    taxEnabled,
+    taxPercentage,
     setExternalOrderId,
     searchCustomer,
+    paymentMode,
+    setPaymentMode,
   } = props;
 
-  const balanceToPay = Number(finalTotal || 0) - Number(advanceAmount || 0);
   const [showCustomerModal, setShowCustomerModal] = React.useState(false);
-const discountValue =
+const discountAmount =
   discountType === "percentage"
     ? (subtotal * discount) / 100
     : discount;
+const calculatedTax = taxEnabled
+  ? (subtotal * taxPercentage) / 100
+  : 0;
+
+const finalTotal = subtotal + calculatedTax - discountAmount;
+
+const balanceToPay = Math.max(
+  0,
+  Number(finalTotal || 0) - Number(advanceAmount || 0)
+);
   return (
     <aside className="w-[390px] bg-white rounded-xl border flex flex-col overflow-hidden">
       {/* ================= CUSTOMER ================= */}
@@ -147,15 +153,15 @@ const discountValue =
           <p className="text-gray-400 text-center">Cart Empty</p>
         ) : (
           
-          cart.map((item) =>{
+          cart.map((item, index) =>{
               let unitDisplay = "";
       if (item.variant_info && item.variant_info !== "default") {
-        unitDisplay = item.variant_info.replace('_', ' '); // e.g., "1.00_kg" → "1.00 kg"
+        unitDisplay = item.variant_info.replaceAll('_', ' ');// e.g., "1.00_kg" → "1.00 kg"
       }
             return(
             
             <div
-              key={`${item.food_id}-${item.variant_info || "default"}`}
+              key={`${item.food_id}-${item.variant_info}-${index}`}
               className="border p-3 mb-2 rounded"
             >
               <div className="flex justify-between">
@@ -199,114 +205,91 @@ const discountValue =
       </div>
 
       {/* ================= TOTAL ================= */}
-      <div className="p-2 border-t space-y-1 ">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span>₹{Number(subtotal || 0).toFixed(2)}</span>
-        </div>
-
-        <div className="flex justify-between items-center">
-  <span>Tax ({taxPercentage}%)
-     <button
-      onClick={() => setShowTaxEditor(!showTaxEditor)}
-      className="text-xs text-indigo-600 underline"
-    >
-      Edit
-    </button>
-  </span>
+    <div className="p-2 border-t space-y-1 ">
   
-
-  <div className="flex items-center gap-2">
-    <span>₹{Number(tax || 0).toFixed(2)}</span>
-
-    {/* Edit Button */}
-   
+  <div className="flex justify-between">
+    <span>Subtotal</span>
+    <span>₹{Number(subtotal || 0).toFixed(2)}</span>
   </div>
-</div>
+{tax > 0 && (
+  <div className="flex justify-between">
+    <span>Tax ({taxPercentage}%)</span>
+    <span>₹{calculatedTax.toFixed(2)}</span>
+  </div>
+)}
+  {discount > 0 && (
+    <div className="flex justify-between text-green-600">
+      <span>
+        Discount (
+        {discountType === "percentage"
+          ? `${discount}%`
+          : `₹${discount}`}
+        )
+      </span>
+      <span>-₹{Number(discountAmount).toFixed(2)}</span>
+    </div>
+  )}
 
-{/* TAX EDIT INPUT */}
-{showTaxEditor && (
-  <div className="flex gap-2 mt-2">
-    <input
-      type="number"
-      value={taxPercentage}
-      onChange={(e) => setTaxPercentage(Number(e.target.value))}
-      className="border px-2 py-1 rounded w-full text-sm"
-      placeholder="Enter tax %"
-    />
+  <div className="flex justify-between font-bold text-lg">
+    <span>Total</span>
+    <span>₹{Number(finalTotal || 0).toFixed(2)}</span>
+  </div>
+
+  {orderType !== "normal" && customPrice > 0 && (
+    <span className="text-xs text-blue-500 ml-2">(Custom Price)</span>
+  )}
+
+  {advanceAmount > 0 && (
+    <>
+      <div className="flex justify-between text-sm text-blue-600">
+        <span>Advance Paid</span>
+        <span>₹{Number(advanceAmount).toFixed(2)}</span>
+      </div>
+
+      <div className="flex justify-between text-sm text-red-600">
+        <span>Balance</span>
+        <span>₹{Number(balanceToPay).toFixed(2)}</span>
+      </div>
+    </>
+  )}
+
+  <button
+    onClick={
+      !selectedBill
+        ? handleGenerateBill
+        : () => setShowPaymentModal(true)
+    }
+    className="w-full bg-indigo-600 text-white py-2 rounded"
+  >
+    {selectedBill ? "Proceed Payment" : "Generate Bill"}
+  </button>
+
+  {selectedBill?.status === "paid" && (
+    <button
+      onClick={() => printBill(selectedBill)}
+      className="w-full bg-green-600 text-white py-2 rounded"
+    >
+      Print Invoice
+    </button>
+  )}
+
+  <div className="flex gap-2">
+    <button
+      onClick={() => setShowPendingModal(true)}
+      className="flex-1 bg-yellow-100 py-2 rounded"
+    >
+      Pending
+    </button>
 
     <button
-      onClick={handleSaveTaxPercentage}
-      className="bg-indigo-600 text-white px-3 py-1 rounded text-sm"
+      onClick={printKOT}
+      className="flex-1 bg-gray-200 py-2 rounded"
     >
-      Save
+      Print KOT
     </button>
   </div>
-)}
 
-        {discount > 0 && (
-  <div className="flex justify-between text-green-600">
-    <span>
-      Discount ({discountType === "percentage" ? `${discount}%` : "₹"})
-    </span>
-    <span>-₹{Number(discountValue).toFixed(2)}</span>
-  </div>
-)}
-
-        <div className="flex justify-between font-bold text-lg">
-          <span>Total</span>₹{Number(finalTotal || 0).toFixed(2)}
-          {orderType !== "normal" && customPrice > 0 && (
-            <span className="text-xs text-blue-500 ml-2">(Custom Price)</span>
-          )}
-        </div>
-
-        {advanceAmount > 0 && (
-          <>
-            <div className="flex justify-between text-sm text-blue-600">
-              <span>Advance Paid</span>
-              <span>₹{Number(advanceAmount).toFixed(2)}</span>
-            </div>
-
-            <div className="flex justify-between text-sm text-red-600">
-              <span>Balance</span>
-              <span>₹{Number(balanceToPay).toFixed(2)}</span>
-            </div>
-          </>
-        )}
-
-        <button
-          onClick={
-            !selectedBill ? handleGenerateBill : () => setShowPaymentModal(true)
-          }
-          className="w-full bg-indigo-600 text-white py-2 rounded"
-        >
-          {selectedBill ? "Proceed Payment" : "Generate Bill"}
-        </button>
-        {selectedBill?.status === "paid" && (
-          <button
-            onClick={() => printBill(selectedBill)}
-            className="w-full bg-green-600 text-white py-2 rounded"
-          >
-            Print Invoice
-          </button>
-        )}
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowPendingModal(true)}
-            className="flex-1 bg-yellow-100 py-2 rounded"
-          >
-            Pending
-          </button>
-
-          <button
-            onClick={printKOT}
-            className="flex-1 bg-gray-200 py-2 rounded"
-          >
-            Print KOT
-          </button>
-        </div>
-      </div>
+</div>   {/* ✅ CLOSE ONLY HERE */}
       {showCustomerModal && (
         <CustomerModal
           open={showCustomerModal}
