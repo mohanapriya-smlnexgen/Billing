@@ -655,6 +655,7 @@ const finalTotal = Math.max(
 
     return { qty, unit };
   };
+
 const printAdvanceBill = (bill) => {
   const printWindow = window.open("", "_blank");
   const subtotal = Number(bill.total_amount || bill.custom_price || 0);
@@ -853,11 +854,35 @@ ${advance > 0 ? `
       console.error(error);
     }
   };
+  const silentPrint = (htmlContent) => {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(htmlContent);
+  doc.close();
+
+  iframe.onload = () => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+
+    // remove iframe after print
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
+  };
+};
 const printBill = (billData) => {
   const bill = billData || selectedBill;
   if (!bill) return;
-
-  const printWindow = window.open("", "_blank");
 
   const subtotal = Number(bill.total_amount || bill.custom_price || 0);
 
@@ -880,195 +905,18 @@ const printBill = (billData) => {
   const paid = advance + received;
   const balance = total - paid;
 
-  printWindow.document.write(`
-<html>
-<head>
-<title>Bill</title>
-<style>
-  @page {
-    size: 80mm auto;
-    margin: 0;
-  }
-
-  body {
-    width: 70mm;
-    height: auto;
-    margin: 0 auto;
-    padding: 5px;
-    font-family: monospace;
-    font-size: 11px;
-  }
-
-  .center { text-align: center; }
-
-  .row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-  }
-
-  .line {
-    border-top: 1px dashed #000;
-    margin: 5px 0;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th, td {
-    font-size: 11px;
-    padding: 2px 0;
-  }
-
-  th {
-    border-bottom: 1px solid #000;
-  }
-
-  .item { width: 50%; }
-  .qty { width: 15%; text-align: center; }
-  .amt { width: 35%; text-align: right; }
-
-</style>
-</head>
-
-<body>
-
-<div class="center">
-  <b>${restaurantName}</b><br/>
-  ${address || ""}<br/>
-  Mob: ${restaurantPhone || ""}<br/>
-  GSTIN: ${restaurantGstin || ""}
-</div>
-
-<div class="line"></div>
-
-<div class="row">
-  <span>Date: ${new Date().toLocaleDateString()}</span>
-  <span>${new Date().toLocaleTimeString()}</span>
-</div>
-
-<div class="row">
-  <span>Bill No: ${bill.order_id}</span>
-  <span>${bill.order_type || "Normal"}</span>
-</div>
-
-<!-- ✅ CUSTOMER DETAILS ADDED -->
-<div class="row">
-  <span>Customer:</span>
-  <span>${bill.customer?.name || "Guest"}</span>
-</div>
-
-<div class="row">
-  <span>Mobile:</span>
-  <span>${bill.customer?.phone || "-"}</span>
-</div>
-
-<div class="line"></div>
-
-<table>
-  <thead>
-    <tr>
-      <th class="item">Item</th>
-      <th class="qty">Qty</th>
-      <th class="amt">Amt</th>
-    </tr>
-  </thead>
-
-  <tbody>
-    ${(bill.items || []).map(i => `
-      <tr>
-        <td class="item">${i.name}</td>
-        <td class="qty">${i.quantity}</td>
-        <td class="amt">${(i.price * i.quantity).toFixed(2)}</td>
-      </tr>
-    `).join("")}
-  </tbody>
-</table>
-
-<div class="line"></div>
-
-<div class="row">
-  <span>Sub Total</span>
-  <span>₹${subtotal.toFixed(2)}</span>
-</div>
-
-${discount > 0 ? `
-<div class="row">
-  <span>Discount</span>
-  <span>-₹${discount.toFixed(2)}</span>
-</div>` : ""}
-
-${taxConfig.enabled ? `
-<div class="row">
-  <span>Tax (${taxConfig.percentage}%)</span>
-  <span>₹${tax.toFixed(2)}</span>
-</div>` : ""}
-
-<div class="line"></div>
-
-<div class="row" style="font-weight:bold">
-  <span>Grand Total</span>
-  <span>₹${total.toFixed(2)}</span>
-</div>
-
-${advance > 0 ? `
-<div class="row">
-  <span>Advance</span>
-  <span>₹${advance.toFixed(2)}</span>
-</div>` : ""}
-
-${received > 0 ? `
-<div class="row">
-  <span>Paid</span>
-  <span>₹${received.toFixed(2)}</span>
-</div>` : ""}
-
-<div class="row">
-  <span>Balance</span>
-  <span>₹${balance.toFixed(2)}</span>
-</div>
-
-<div class="line"></div>
-
-<div class="center">
-  <p>🙏 THANK YOU</p>
-</div>
-
-</body>
-</html>
-`);
-
-  printWindow.document.close();
-  printWindow.print();
-};
-  const printKOT = () => {
-  if (!selectedBill && cart.length === 0) return;
-
-  const kotWindow = window.open("", "_blank");
-
-  const items = selectedBill?.items || cart;
-
-  const orderId = selectedBill?.order_id || selectedBill?.bill_id || Math.floor(1000 + Math.random() * 9000);;
-  const customerNameVal = selectedBill?.customer?.name || customerName || "Guest";
-  const customerPhoneVal = selectedBill?.customer?.phone || customerPhone || "-";
-
-  const orderTime = selectedBill?.created_at
-    ? new Date(selectedBill.created_at)
-    : new Date();
-
-  kotWindow.document.write(`
+  silentPrint(`
   <html>
   <head>
-    <title>KOT</title>
     <style>
+      @page { size: 80mm auto; margin: 0; }
+
       body {
+        width: 70mm;
+        margin: 0 auto;
+        padding: 5px;
         font-family: monospace;
-        width: 300px;
-        margin: auto;
-        padding: 10px;
-        font-size: 12px;
+        font-size: 11px;
       }
 
       .center { text-align: center; }
@@ -1076,12 +924,11 @@ ${received > 0 ? `
       .row {
         display: flex;
         justify-content: space-between;
-        font-size: 12px;
       }
 
       .line {
         border-top: 1px dashed #000;
-        margin: 8px 0;
+        margin: 5px 0;
       }
 
       table {
@@ -1090,30 +937,204 @@ ${received > 0 ? `
       }
 
       th, td {
-        font-size: 12px;
-        padding: 4px 0;
+        font-size: 11px;
+        padding: 2px 0;
       }
 
       th {
         border-bottom: 1px solid #000;
       }
 
-      .big {
-        font-size: 16px;
-        font-weight: bold;
-      }
-
-      .bold {
-        font-weight: bold;
-      }
+      .item { width: 50%; }
+      .qty { width: 15%; text-align: center; }
+      .amt { width: 35%; text-align: right; }
     </style>
   </head>
 
   <body>
 
-  <!-- 🔥 SHOP DETAILS -->
   <div class="center">
-    <div class="big">${restaurantName}</div>
+    <b>${restaurantName || ""}</b><br/>
+    ${address || ""}<br/>
+    Mob: ${restaurantPhone || ""}<br/>
+    GSTIN: ${restaurantGstin || ""}
+  </div>
+
+  <div class="line"></div>
+
+  <div class="row">
+    <span>${new Date().toLocaleDateString()}</span>
+    <span>${new Date().toLocaleTimeString()}</span>
+  </div>
+
+  <div class="row">
+    <span>Bill No: ${bill.order_id}</span>
+    <span>${bill.order_type || "Normal"}</span>
+  </div>
+
+  <div class="row">
+    <span>Customer:</span>
+    <span>${bill.customer?.name || "Guest"}</span>
+  </div>
+
+  <div class="row">
+    <span>Mobile:</span>
+    <span>${bill.customer?.phone || "-"}</span>
+  </div>
+
+  <div class="line"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="item">Item</th>
+        <th class="qty">Qty</th>
+        <th class="amt">Amt</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      ${(bill.items || []).map(i => `
+        <tr>
+          <td>${i.name}</td>
+          <td class="qty">${i.quantity}</td>
+          <td class="amt">${(i.price * i.quantity).toFixed(2)}</td>
+        </tr>
+      `).join("")}
+    </tbody>
+  </table>
+
+  <div class="line"></div>
+
+  <div class="row">
+    <span>Sub Total</span>
+    <span>₹${subtotal.toFixed(2)}</span>
+  </div>
+
+  ${discount > 0 ? `
+  <div class="row">
+    <span>Discount</span>
+    <span>-₹${discount.toFixed(2)}</span>
+  </div>` : ""}
+
+  ${taxConfig.enabled ? `
+  <div class="row">
+    <span>Tax (${taxConfig.percentage}%)</span>
+    <span>₹${tax.toFixed(2)}</span>
+  </div>` : ""}
+
+  <div class="line"></div>
+
+  <div class="row" style="font-weight:bold">
+    <span>Grand Total</span>
+    <span>₹${total.toFixed(2)}</span>
+  </div>
+
+  ${advance > 0 ? `
+  <div class="row">
+    <span>Advance</span>
+    <span>₹${advance.toFixed(2)}</span>
+  </div>` : ""}
+
+  ${received > 0 ? `
+  <div class="row">
+    <span>Paid</span>
+    <span>₹${received.toFixed(2)}</span>
+  </div>` : ""}
+
+  <div class="row">
+    <span>Balance</span>
+    <span>₹${balance.toFixed(2)}</span>
+  </div>
+
+  <div class="line"></div>
+
+  <div class="center">
+    🙏 THANK YOU
+  </div>
+
+  </body>
+  </html>
+  `);
+};
+const printKOT = () => {
+  if (!selectedBill && cart.length === 0) return;
+
+  const items = selectedBill?.items || cart;
+
+  const orderId =
+    selectedBill?.order_id ||
+    Math.floor(1000 + Math.random() * 9000);
+
+  const customerNameVal =
+    selectedBill?.customer?.name || customerName || "Guest";
+
+  const customerPhoneVal =
+    selectedBill?.customer?.phone || customerPhone || "-";
+
+  const orderTime = selectedBill?.created_at
+    ? new Date(selectedBill.created_at)
+    : new Date();
+
+  silentPrint(`
+  <html>
+  <head>
+    <style>
+      @page { size: 80mm auto; margin: 0; }
+
+      body {
+        width: 70mm;
+        margin: 0 auto;
+        padding: 6px;
+        font-family: monospace;
+        font-size: 11px;
+      }
+
+      .center { text-align: center; }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .line {
+        border-top: 1px dashed #000;
+        margin: 6px 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        padding: 3px 0;
+        font-size: 11px;
+      }
+
+      th {
+        border-bottom: 1px solid #000;
+      }
+        .item {
+  width: 75%;
+  text-align: left;
+  word-break: break-word;
+}
+
+.qty {
+  width: 25%;
+  text-align: right;
+}
+
+      .bold { font-weight: bold; }
+      .big { font-size: 14px; font-weight: bold; }
+    </style>
+  </head>
+
+  <body>
+
+  <div class="center">
+    <div class="big">${restaurantName || ""}</div>
     <div>${address || ""}</div>
     <div>Mob: ${restaurantPhone || ""}</div>
     <div>GSTIN: ${restaurantGstin || ""}</div>
@@ -1121,14 +1142,12 @@ ${received > 0 ? `
 
   <div class="line"></div>
 
-  <!-- 🔥 KOT HEADER -->
   <div class="center bold">
-    KITCHEN ORDER TICKET (KOT)
+    KITCHEN ORDER TICKET
   </div>
 
   <div class="line"></div>
 
-  <!-- 🔥 ORDER INFO -->
   <div class="row">
     <span>KOT No:</span>
     <span>#${orderId}</span>
@@ -1146,7 +1165,6 @@ ${received > 0 ? `
 
   <div class="line"></div>
 
-  <!-- 🔥 CUSTOMER -->
   <div class="row">
     <span>Customer:</span>
     <span>${customerNameVal}</span>
@@ -1159,20 +1177,19 @@ ${received > 0 ? `
 
   <div class="line"></div>
 
-  <!-- 🔥 ITEMS -->
   <table>
     <thead>
       <tr>
-        <th>Item</th>
-        <th style="text-align:right;">Qty</th>
+        <th class="item">Item</th>
+<th class="qty">Qty</th>
       </tr>
     </thead>
 
     <tbody>
       ${items.map(i => `
         <tr>
-          <td>${i.name}</td>
-          <td style="text-align:right;" class="bold">${i.quantity}</td>
+        <td class="item">${i.name}</td>
+<td class="qty bold">${i.quantity}</td>
         </tr>
       `).join("")}
     </tbody>
@@ -1180,15 +1197,13 @@ ${received > 0 ? `
 
   <div class="line"></div>
 
-  <!-- 🔥 TOTAL QTY -->
   <div class="row bold">
-    <span>Total Items</span>
+    <span>Total Qty</span>
     <span>${items.reduce((a,b)=>a + Number(b.quantity || 0), 0)}</span>
   </div>
 
   <div class="line"></div>
 
-  <!-- 🔥 FOOTER -->
   <div class="center bold">
     *** PREPARE IMMEDIATELY ***
   </div>
@@ -1196,9 +1211,6 @@ ${received > 0 ? `
   </body>
   </html>
   `);
-
-  kotWindow.document.close();
-  kotWindow.print();
 };
 
   return (
@@ -1455,7 +1467,6 @@ ${received > 0 ? `
   paymentMode={paymentMode}
   menuItems={menuItems}
   subtotal={subtotal}
-  discountType={discountType }
   setDiscountType={setDiscountType}
   tax={tax}
   discount={discount}
@@ -1464,9 +1475,7 @@ ${received > 0 ? `
   setCredit={setCredit}
   finalTotal={finalTotal}
   advanceAmount={advanceAmount}
-   discountType={discountType}
-   
-  setDiscountType={setDiscountType}
+  discountType={discountType}
   selectedBill={selectedBill}
   handleGenerateBill={handleGenerateBill}
   setShowPaymentModal={setShowPaymentModal}
