@@ -118,6 +118,7 @@ const [restaurantGstin, setRestaurantGstin] = useState("");
   const [pendingSearch, setPendingSearch] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("all");
   const [discountType, setDiscountType] = useState("fixed");
+  const [isViewingBill, setIsViewingBill] = useState(false);
   const [address, setAddress] = useState(""); // ✅ ADD THIS
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
@@ -548,6 +549,7 @@ const filteredItems = useMemo(() => {
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   useEffect(() => {
+    if (isViewingBill) return; 
     if (subtotal > 0) {
       fetchDiscount(subtotal);
     } else {
@@ -641,6 +643,7 @@ const dueAmount = safeNumber(finalTotal) - paid;
       await fetchPreOrderAlerts();
       // setTimeout(() => printAdvanceBill(res.data), 500);
       await fetchBills();
+      setIsViewingBill(false);
     } catch (err) {
       console.error("Error creating order:", err);
     }
@@ -799,6 +802,7 @@ ${advance > 0 ? `
 };
 
 const handleSelectBill = (bill) => {
+  setIsViewingBill(true);
   setSelectedBill(bill);
 
   const mappedItems = (bill.items || []).map((item) => ({
