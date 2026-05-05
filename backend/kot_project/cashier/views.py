@@ -149,7 +149,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             total = Decimal('0')
             for item in cart:
                 price = Decimal(str(item.get('price', 0)))
-                qty = int(item.get('quantity', 0))
+                qty = Decimal(str(item.get('quantity', 0)))
                 total += price * qty
 
             if total <= 0:
@@ -193,19 +193,22 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Not enough credits"}, status=400)
 
             # ───── TAX ─────
+            # ───── TAX ─────
             tax_obj = TaxSetting.objects.first()
             tax_percentage = tax_obj.percentage if tax_obj and tax_obj.enabled else Decimal('0')
-            tax_amount = (total * tax_percentage) / Decimal('100')           # Tax on subtotal (before discount)
 
-            # ───── FINAL AMOUNT (CORRECT LOGIC) ─────
+            subtotal_after_discount = total - discount
+
+            tax_amount = (subtotal_after_discount * tax_percentage) / Decimal('100')
+
+            # ───── FINAL AMOUNT ─────
             advance = Decimal(str(data.get('advance_paid', 0)))
             custom_price = data.get('custom_price')
 
             if custom_price is not None:
                 final_amount = Decimal(str(custom_price))
             else:
-                # ✅ CORRECT CALCULATION: subtotal - discount + tax - credit
-                final_amount = total - discount + tax_amount - credit
+                final_amount = subtotal_after_discount + tax_amount - credit
 
             if final_amount < 0:
                 final_amount = Decimal('0')
@@ -306,6 +309,36 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             **OrderSerializer(order).data,
             "change_returned": float(change)  # 🔥 useful for frontend
         })
+    @action(detail=True, methods=['post'], url_path='update_price')
+    def update_price(self, request, pk=None):
+        from decimal import Decimal
+
+        order = self.get_object()
+
+        try:
+            new_price = Decimal(str(request.data.get('final_amount', 0)))
+
+            if new_price <= 0:
+                return Response({"error": "Invalid price"}, status=400)
+
+            # ✅ Update correct field
+            order.final_amount = new_price
+
+            # ✅ IMPORTANT: keep data consistent
+            order.remaining_amount = new_price - (order.advance_paid or 0)
+
+            if order.remaining_amount < 0:
+                order.remaining_amount = Decimal('0')
+
+            order.save()
+
+            return Response({
+                "message": "Price updated successfully",
+                "order": OrderSerializer(order).data
+            })
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
 # ──────────────────────────────
     # 3. CANCEL ORDER
     # ──────────────────────────────

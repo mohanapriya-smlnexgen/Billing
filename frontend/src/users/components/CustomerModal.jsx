@@ -32,29 +32,38 @@ export default function CustomerModal({
   const [selectedItem, setSelectedItem] = useState(null);
   const [unit, setUnit] = useState("qty");
   const [qty, setQty] = useState("");
-
+const [searchItem, setSearchItem] = useState("");
+const [showDropdown, setShowDropdown] = useState(false);
   // ✅ SAFE setCart
   const safeSetCart = typeof setCart === "function" ? setCart : () => {};
-
+const filteredMenuItems = useMemo(() => {
+  return menuItems.filter((item) =>
+    item.name.toLowerCase().includes(searchItem.toLowerCase())
+  );
+}, [menuItems, searchItem]);
   /* ---------------- PRICE HELPER ---------------- */
-  const getPricePerKg = (item) => {
-    if (!item?.variants || item.variants.length === 0) {
-      return Number(item.price || 0);
-    }
-    const kgVariant = item.variants.find(
-      (v) => v.unit === "kg" && Number(v.value) === 1
-    );
-    if (kgVariant) return Number(kgVariant.price);
-
-    const first = item.variants[0];
-    if (first.unit === "g") {
-      return (Number(first.price) / Number(first.value)) * 1000;
-    }
-    if (first.unit === "kg") {
-      return Number(first.price) / Number(first.value);
-    }
+const getPricePerKg = (item) => {
+  if (!item?.variants || item.variants.length === 0) {
     return Number(item.price || 0);
-  };
+  }
+
+  // 🔥 Find correct variant (prefer kg)
+  const kgVariant = item.variants.find(
+    (v) => v.unit === "kg"
+  );
+
+  if (kgVariant) {
+    return Number(kgVariant.price) / Number(kgVariant.value || 1);
+  }
+
+  const first = item.variants[0];
+
+  if (first.unit === "g") {
+    return (Number(first.price) / Number(first.value)) * 1000;
+  }
+
+  return Number(first.price || item.price || 0);
+};
 
   /* ---------------- RESET QTY ON ITEM CHANGE ---------------- */
   useEffect(() => {
@@ -70,7 +79,12 @@ export default function CustomerModal({
       const pricePerKg = getPricePerKg(selectedItem);
       calculatedTotalPrice = pricePerKg * Number(qty);
     } else {
-      calculatedTotalPrice = Number(selectedItem.price || 0) * Number(qty);
+      const basePrice =
+  selectedItem.variants?.length > 0
+    ? Number(selectedItem.variants[0].price)
+    : Number(selectedItem.price || 0);
+
+calculatedTotalPrice = basePrice * Number(qty);
     }
 
     setCustomPrice(calculatedTotalPrice);
@@ -124,7 +138,7 @@ export default function CustomerModal({
     </div>
 
     {/* BODY */}
-    <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+    <div className="p-3s space-y-4 max-h-[70vh] overflow-y-auto">
 
       {/* PHONE + NAME */}
       <div className="grid grid-cols-2 gap-2">
@@ -149,11 +163,11 @@ export default function CustomerModal({
       </div>
 
       {/* CREDIT */}
-      {customerFound && (
+      {/* {customerFound && (
         <div className="text-green-600 text-sm font-semibold">
           Credits Available: ₹{customerCredits}
         </div>
-      )}
+      )} */}
 
       {/* DISCOUNT */}
       <div className="flex gap-2">
@@ -190,25 +204,41 @@ export default function CustomerModal({
       {orderType === "bulk" && (
         <div className="space-y-3 bg-gray-50 p-3 rounded-xl border">
 
-          <select
-            value={selectedItem?.food_id || ""}
-            onChange={(e) => {
-              const id = Number(e.target.value);
-              const item = menuItems.find(
-                (i) => Number(i.food_id) === id
-              );
-              setSelectedItem(item);
-            }}
-            className="border p-2 rounded w-full"
-          >
-            <option value="">Select Item</option>
+         <div className="relative">
+  <input
+    type="text"
+    placeholder="Search & select item..."
+    value={searchItem}
+    onChange={(e) => {
+      setSearchItem(e.target.value);
+      setShowDropdown(true);
+    }}
+    onFocus={() => setShowDropdown(true)}
+    className="border p-2 rounded w-full"
+  />
 
-            {menuItems.map((item, index) => (
-              <option key={item.food_id || index} value={item.food_id}>
-                {item.name} - ₹{item.price}
-              </option>
-            ))}
-          </select>
+  {showDropdown && (
+    <div className="absolute z-10 bg-white border w-full mt-1 rounded max-h-40 overflow-y-auto shadow">
+      {filteredMenuItems.length > 0 ? (
+        filteredMenuItems.map((item) => (
+          <div
+            key={item.food_id}
+            onClick={() => {
+              setSelectedItem(item);
+              setSearchItem(item.name); // show selected name
+              setShowDropdown(false);
+            }}
+            className="p-2 hover:bg-indigo-100 cursor-pointer"
+          >
+            {item.name} - ₹{item.price}
+          </div>
+        ))
+      ) : (
+        <div className="p-2 text-gray-400">No items found</div>
+      )}
+    </div>
+  )}
+</div>
 
           <select
             value={unit}
