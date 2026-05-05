@@ -556,9 +556,11 @@ const filteredItems = useMemo(() => {
   }, [subtotal]);
 
 //  const tax = subtotal * (taxPercentage / 100);
+const baseAmount = customPrice > 0 ? customPrice : subtotal;
+
 const discountValue =
   discountType === "percentage"
-    ? (subtotal * discount) / 100
+    ? (baseAmount * discount) / 100
     : discount;
 
 const subtotalAfterDiscount = subtotal - discountValue;
@@ -566,12 +568,21 @@ const subtotalAfterDiscount = subtotal - discountValue;
 const tax = taxConfig.enabled
   ? (subtotalAfterDiscount * taxConfig.percentage) / 100
   : 0;
+const safeNumber = (val) => Number(val) || 0;
 
 const finalTotal = Math.max(
-  subtotalAfterDiscount + tax - credit,
+  safeNumber(subtotalAfterDiscount) +
+  safeNumber(tax) -
+  safeNumber(credit),
   0
 );
-  const dueAmount = (selectedBill?.custom_price || selectedBill?.final_amount || finalTotal) - (selectedBill?.advance_paid || selectedBill?.received_amount || 0);
+
+
+const paid =
+  safeNumber(selectedBill?.advance_paid) +
+  safeNumber(selectedBill?.received_amount);
+
+const dueAmount = safeNumber(finalTotal) - paid;
   const balance = cashReceived - dueAmount;
 
   const handleGenerateBill = async () => {
@@ -601,25 +612,22 @@ const finalTotal = Math.max(
         advance_paid: advanceAmount || 0,
         payment_mode: paymentMode || "cash",
         status: "pending",
-        cart: cart.map((item) => {
-          let qty = item.quantity;
+       cart: cart.map((item) => {
+  let qty = item.quantity;
 
-          if (orderType === "bulk" && bulkNote) {
-            let qty = item.quantity;
+  if (orderType === "bulk" && bulkNote) {
+    const parsed = parseBulkQty(bulkNote);
+    qty = parsed.qty;
+  }
 
-            if (orderType === "bulk" && bulkNote) {
-              const parsed = parseBulkQty(bulkNote);
-              qty = parsed.qty;
-            }
-          }
-
-          return {
-            food_id: item.food_id,
-            name: item.name,
-            quantity: qty,
-            price: item.price,
-          };
-        }),
+  return {
+    food_id: item.food_id,
+    name: item.name,
+    quantity: qty,
+    price: item.price,
+    variant_info: item.variant_info,
+  };
+}),
       };
      console.log("PAYLOAD:", {
   received_amount: cashReceived,
@@ -790,70 +798,93 @@ ${advance > 0 ? `
   printWindow.print();
 };
 
-  const handleSelectBill = (bill) => {
-    setSelectedBill(bill);
-    setCart((bill.items || []).map((item) => ({
-      food_id: item.food_id,
-      name: item.name,
-      quantity: Number(item.quantity),
-      price: Number(item.price),
-      isCustom: !!bill.custom_price,
-    })));
-    setShowPendingModal(false);
-    setShowAlertModal(false);
-  };
+const handleSelectBill = (bill) => {
+  setSelectedBill(bill);
 
-  const handlePayNow = async () => {
-    if (!selectedBill) return;
+  const mappedItems = (bill.items || []).map((item) => ({
+    food_id: item.food_id,
+    name: item.name,
+    quantity: Number(item.quantity),
+    price: Number(item.price),
+    variant_info: item.variant_info || "default", // ✅ IMPORTANT
+  }));
 
-    try {
-      const total = Number(selectedBill?.custom_price || selectedBill?.final_amount || 0);
-      const advance = Number(selectedBill?.advance_paid || 0);
-      let remaining = total - advance;
+  setCart(mappedItems);
 
-      if (remaining <= 0 || !cashReceived || cashReceived < remaining) return;
+  // ✅ restore other values (VERY IMPORTANT)
+  setCustomerName(bill.customer?.name || "");
+  setCustomerPhone(bill.customer?.phone || "");
 
-      const response = await axios.post(`${BILL_API}${selectedBill.order_id}/mark_paid/`, {
+  setDiscount(Number(bill.discount_amount || 0));
+  setCredit(Number(bill.credit_used || 0));
+  setAdvanceAmount(Number(bill.advance_paid || 0));
+  setCustomPrice(Number(bill.custom_price || 0));
+
+  setPaymentMode(bill.payment_mode || "cash");
+
+  setShowPendingModal(false);
+  setShowAlertModal(false);
+};
+const updateOrderPrice = async (orderId, newPrice) => {
+  try {
+    await axios.post(`${BILL_API}${orderId}/update_price/`, {
+      final_amount: newPrice,
+    });
+
+    await fetchBills(); // 🔥 VERY IMPORTANT
+  } catch (err) {
+    console.error("Price update failed", err);
+  }
+};
+const handlePayNow = async () => {
+  if (!selectedBill) return;
+
+  try {
+    const total =
+      customPrice > 0
+        ? Number(customPrice)
+        : Number(finalTotal);
+
+    // ✅ UPDATE PRICE BEFORE PAYMENT
+   await axios.post(
+  `${BILL_API}${selectedBill.order_id}/update_price/`,
+  {
+    final_amount: total,
+  }
+);
+ await fetchBills(); // refresh
+
+    const advance = Number(advanceAmount || 0);
+    const remaining = total - advance;
+
+    if (!cashReceived || cashReceived < remaining) {
+      alert("Insufficient amount");
+      return;
+    }
+
+    const response = await axios.post(
+      `${BILL_API}${selectedBill.order_id}/mark_paid/`,
+      {
         received_amount: cashReceived,
         payment_mode: paymentMode,
-      });
+      }
+    );
 
-      // mark paid response
-      const paidBill = response.data;
+    const paidBill = response.data;
 
-      // OPTIONAL: print before clearing
-      setTimeout(() => printBill(paidBill), 300);
+    setTimeout(() => printBill(paidBill), 300);
 
-      // 🔥 RESET EVERYTHING
-      setSelectedBill(null);
-      setCart([]);
-      setShowPaymentModal(false);
-      setCashReceived(0);
+    // reset...
+    setSelectedBill(null);
+    setCart([]);
+    setShowPaymentModal(false);
+    setCashReceived(0);
 
-      // reset customer
-      setCustomerName("");
-      setCustomerPhone("");
-      setCustomerFound(false);
-      setCustomerCredits(0);
-
-      // reset financials
-      setAdvanceAmount(0);
-      setDiscount(0);
-      setCredit(0);
-
-      // reset order type
-      setOrderType("normal");
-      setCustomPrice(0);
-      setScheduledTime("");
-      setBulkNote("");
-
-      // refresh bills
-      await fetchBills();
-      await fetchBills();
-    } catch (error) {
-      console.error(error);
-    }
-  };
+    await fetchBills(); // 🔥 refresh again
+  } catch (error) {
+    console.error(error);
+  }
+};
   const silentPrint = (htmlContent) => {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
@@ -882,30 +913,34 @@ ${advance > 0 ? `
 };
 const printBill = (billData) => {
   const bill = billData || selectedBill;
-  if (!bill) return;
+if (!bill) return;
+const safe = (v) => Number(v) || 0;
+const items = cart.length > 0 ? cart : bill.items || [];
 
-  const subtotal = Number(bill.total_amount || bill.custom_price || 0);
+const subtotal = items.reduce(
+  (sum, item) => sum + safe(item.price) * safe(item.quantity),
+  0
+);
 
-  const discount =
-    bill.discount_type === "percentage" ||
-    (bill.discount > 0 && !bill.discount_amount)
-      ? (subtotal * Number(bill.discount || 0)) / 100
-      : Number(bill.discount_amount || 0);
+const discount =
+  bill.discount_type === "percentage" ||
+  (safe(bill.discount) > 0 && !bill.discount_amount)
+    ? (subtotal * safe(bill.discount)) / 100
+    : safe(bill.discount_amount);
 
-  const subtotalAfterDiscount = subtotal - discount;
+const subtotalAfterDiscount = subtotal - discount;
 
-  const tax = taxConfig.enabled
-    ? (subtotalAfterDiscount * taxConfig.percentage) / 100
-    : 0;
+const tax = taxConfig?.enabled
+  ? (subtotalAfterDiscount * safe(taxConfig?.percentage)) / 100
+  : 0;
 
-  const advance = Number(bill.advance_paid || 0);
-  const received = Number(bill.received_amount || 0);
+const advance = safe(bill.advance_paid);
+const received = safe(bill.received_amount);
 
-  const total = subtotalAfterDiscount + tax;
-  const paid = advance + received;
-  const balance = total - paid;
-
-  silentPrint(`
+const total = subtotalAfterDiscount + tax;
+const paid = advance + received;
+const balance = total - paid;
+silentPrint(`
   <html>
   <head>
     <style>
@@ -994,7 +1029,7 @@ const printBill = (billData) => {
     </thead>
 
     <tbody>
-      ${(bill.items || []).map(i => `
+      ${items.map(i => `
         <tr>
           <td>${i.name}</td>
           <td class="qty">${i.quantity}</td>
@@ -1857,7 +1892,7 @@ taxPercentage={taxConfig.percentage}
         <div>
           <p className="text-xs text-gray-500">Order #{selectedBill.order_id}</p>
           <p className="text-2xl font-bold text-gray-900">
-            ₹{Number(selectedBill.custom_price || selectedBill.final_amount || 0).toFixed(2)}
+            ₹{dueAmount.toFixed(2)}
           </p>
         </div>
 

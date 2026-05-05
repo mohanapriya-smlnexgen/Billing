@@ -115,8 +115,15 @@ WSGI_APPLICATION = 'kot_project.wsgi.application'
  
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'neondb',
+        'USER': 'neondb_owner',
+        'PASSWORD': 'npg_UW2SmabiEj0D',
+        'HOST': 'ep-shiny-silence-ammtgqom-pooler.c-5.us-east-1.aws.neon.tech',
+        'PORT': '5432',
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
     }
 }
  

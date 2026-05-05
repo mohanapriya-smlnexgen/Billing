@@ -74,15 +74,22 @@ export const BillingRightPanel = (props) => {
   } = props;
 
   const [showCustomerModal, setShowCustomerModal] = React.useState(false);
+const baseAmount =
+  orderType === "bulk" && customPrice > 0
+    ? customPrice
+    : subtotal;
+
 const discountAmount =
   discountType === "percentage"
-    ? (subtotal * discount) / 100
+    ? (baseAmount * discount) / 100
     : discount;
-const calculatedTax = taxEnabled
-  ? (subtotal * taxPercentage) / 100
-  : 0;
 
-const finalTotal = subtotal + calculatedTax - discountAmount;
+const subtotalAfterDiscount = baseAmount - discountAmount;
+
+const calculatedTax =
+  taxEnabled ? (subtotalAfterDiscount * taxPercentage) / 100 : 0;
+
+const finalTotal = subtotalAfterDiscount + calculatedTax;
 
 const balanceToPay = Math.max(
   0,
@@ -211,7 +218,7 @@ const balanceToPay = Math.max(
     <span>Subtotal</span>
     <span>₹{Number(subtotal || 0).toFixed(2)}</span>
   </div>
-{tax > 0 && (
+{calculatedTax > 0 && (
   <div className="flex justify-between">
     <span>Tax ({taxPercentage}%)</span>
     <span>₹{calculatedTax.toFixed(2)}</span>
