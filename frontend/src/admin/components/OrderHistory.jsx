@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { Send } from "lucide-react";
 const OrderHistory = () => {
   const [orders, setOrders] = useState([]);
-  const [filtered, setFiltered] = useState([]);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -15,9 +15,46 @@ const OrderHistory = () => {
   const [loading, setLoading] = useState(true);
   const [paymentFilter, setPaymentFilter] = useState("all");
 const [showPaymentDropdown, setShowPaymentDropdown] = useState(false);
-useEffect(() => {
-  applyFilters();
-}, [search, statusFilter, typeFilter, dateFilter, paymentFilter, orders]);
+const filtered = useMemo(() => {
+  let data = [...orders];
+
+  if (search) {
+    const term = search.toLowerCase();
+    data = data.filter((o) =>
+      o.customer?.name?.toLowerCase().includes(term) ||
+      o.customer?.phone?.includes(term) ||
+      o.order_id.toString().includes(term)
+    );
+  }
+
+  if (statusFilter !== "all") {
+    data = data.filter((o) => o.status === statusFilter);
+  }
+
+  if (typeFilter !== "all") {
+    if (typeFilter === "preorder") {
+      data = data.filter((o) => o.is_advance === true);
+    } else if (typeFilter === "bulk") {
+      data = data.filter((o) => o.is_bulk === true);
+    }
+  }
+
+  if (dateFilter) {
+    data = data.filter((o) => {
+      if (!o.created_at) return false;
+      const orderDate = new Date(o.created_at).toISOString().split("T")[0];
+      return orderDate === dateFilter;
+    });
+  }
+
+  if (paymentFilter !== "all") {
+    data = data.filter(
+      (o) => (o.payment_mode || "").toLowerCase() === paymentFilter
+    );
+  }
+
+  return data;
+}, [orders, search, statusFilter, typeFilter, dateFilter, paymentFilter]);
   useEffect(() => {
     fetchOrders();
   }, []);

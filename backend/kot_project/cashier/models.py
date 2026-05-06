@@ -63,7 +63,9 @@ class Order(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
 
     refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    daily_order_number = models.IntegerField(editable=False, null=True, blank=True)  # NEW FIELD
+    daily_order_number = models.IntegerField(editable=False, null=True, blank=True) 
+    
+    # NEW FIELD
     def save(self, *args, **kwargs):
         if not self.pk:
             today = timezone.localdate()
@@ -88,10 +90,18 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
     food_id = models.IntegerField(null=True)
     name = models.CharField(max_length=200)
-    quantity = models.IntegerField()
+    quantity = models.DecimalField(
+        max_digits=10, 
+        decimal_places=3, 
+        default=1,
+        validators=[MinValueValidator(0.01)]
+    )
     price = models.DecimalField(max_digits=10, decimal_places=2)
+    variant_info = models.CharField(max_length=100, blank=True, null=True)
     def subtotal(self):
-        return self.quantity * self.price
+        return float(self.quantity) * float(self.price)
+    def __str__(self):
+        return f"{self.name} x {self.quantity}"
 # models.py
 
 class DiscountSetting(models.Model):
@@ -111,7 +121,7 @@ class DiscountSetting(models.Model):
     is_active = models.BooleanField(default=True)
 class TaxSetting(models.Model):
     enabled = models.BooleanField(default=True)
-    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=5.00)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2)
 
     updated_at = models.DateTimeField(auto_now=True)
 

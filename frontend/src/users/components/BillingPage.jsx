@@ -97,6 +97,7 @@ const [tempGstin, setTempGstin] = useState("");
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [selectedVariants, setSelectedVariants] = useState({});
   const [customPrice, setCustomPrice] = useState(0);
+  const [customQuantities, setCustomQuantities] = useState({});
   const [showCustomerDetails, setShowCustomerDetails] = useState(true);
   const [orderType, setOrderType] = useState("normal");
   const [cashReceived, setCashReceived] = useState(0);
@@ -119,6 +120,8 @@ const [restaurantGstin, setRestaurantGstin] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("all");
   const [discountType, setDiscountType] = useState("fixed");
   const [isViewingBill, setIsViewingBill] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
   const [address, setAddress] = useState(""); // ✅ ADD THIS
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
@@ -260,7 +263,7 @@ useEffect(() => {
     fetchPreOrderAlerts();
     const interval = setInterval(() => {
       fetchPreOrderAlerts();
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 const subCategories = useMemo(() => {
@@ -413,14 +416,19 @@ const handleSaveSettings = async () => {
   }
 };
 
-  const handleSaveAdminEmail = async () => {
-    try {
-      await axios.post(SETTING_API, { admin_email: adminEmail });
-    } catch (error) {
-      console.error(error);
-    }
-  };
+ const handleSaveAdminEmail = async () => {
+  try {
+    await axios.post(REPORT_API, {
+      email: adminEmail,
+    });
 
+    // 🔥 IMPORTANT: refresh UI
+    fetchReportEmail();
+
+  } catch (error) {
+    console.error(error.response?.data);
+  }
+};
   // const handleSaveTaxPercentage = () => {
   //   localStorage.setItem("tax_percentage", taxPercentage);
   //   setShowTaxEditor(false);
@@ -510,41 +518,47 @@ const filteredItems = useMemo(() => {
   });
 }, [search, selectedCategory, selectedSubCategory, menuItems]);
 
-  const addToCart = (item) => {
-    const existing = cart.find(
-      c =>
-        c.food_id === item.food_id &&
-        c.variant_info === item.variant_info
-    );
+const addToCart = (newItem) => {
+  const existing = cart.find(
+    c => c.food_id === newItem.food_id && c.variant_info === newItem.variant_info
+  );
 
-    if (existing) {
-      setCart(cart.map(c =>
-        c.food_id === item.food_id &&
-          c.variant_info === item.variant_info
-          ? { ...c, quantity: c.quantity + 1 }
-          : c
-      ));
-    } else {
-      setCart([...cart, { ...item, quantity: 1 }]);
-    }
-  };
+  if (existing) {
+    setCart(cart.map(c =>
+      c.food_id === newItem.food_id && c.variant_info === newItem.variant_info
+        ? { ...c, quantity: c.quantity + newItem.quantity }
+        : c
+    ));
+  } else {
+    setCart([...cart, { ...newItem }]);
+  }
 
-  const updateQty = (foodId, variant, type) => {
-    setCart(prev =>
-      prev
-        .map(item => {
-          if (item.food_id !== foodId || item.variant_info !== variant) return item;
+  // Clear quantity field after adding
+  setCustomQuantities(prev => ({ ...prev, [newItem.food_id]: "" }));
+};
 
-          return {
-            ...item,
-            quantity: type === "inc"
-              ? item.quantity + 1
-              : item.quantity - 1
-          };
-        })
-        .filter(item => item.quantity > 0)
-    );
-  };
+ const updateQty = (foodId, variant, type) => {
+  setCart(prev =>
+    prev
+      .map(item => {
+        if (item.food_id !== foodId || item.variant_info !== variant) return item;
+
+        let newQty = Number(item.quantity);
+
+        if (type === "inc") {
+          newQty = newQty + 0.5;     // Increment by 0.5 (good for kg)
+        } else {
+          newQty = newQty - 0.5;     // Decrement by 0.5
+        }
+
+        return {
+          ...item,
+          quantity: Math.max(0.5, newQty)   // Minimum 0.5
+        };
+      })
+      .filter(item => item.quantity > 0)
+  );
+};
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -587,67 +601,66 @@ const paid =
 const dueAmount = safeNumber(finalTotal) - paid;
   const balance = cashReceived - dueAmount;
 
-  const handleGenerateBill = async () => {
-    if (cart.length === 0) return;
+const handleGenerateBill = async () => {
+  if (cart.length === 0) return;
 
-    try {
-      let formattedScheduledTime = null;
-      if (orderType === "preorder" && scheduledTime) {
-        const date = new Date(scheduledTime);
-        formattedScheduledTime = date.toISOString().slice(0, 19).replace('T', ' ');
-      }
+  setIsGenerating(true);
 
-      const payload = {
-        total_amount: subtotal,
-        final_amount: finalTotal,
-        discount_amount: discountValue,
-        credit_used: credit,
-        discount: discount,
-        discount_type: discountType,  
-        name: customerName,
-        phone: customerPhone,
-        is_bulk: orderType === "bulk",
-        is_advance: orderType === "preorder",
-        bulk_note: bulkNote,
-        custom_price: customPrice > 0 ? customPrice : null,
-        scheduled_time: formattedScheduledTime,
-        advance_paid: advanceAmount || 0,
-        payment_mode: paymentMode || "cash",
-        status: "pending",
-       cart: cart.map((item) => {
-  let qty = item.quantity;
+  try {
+    let formattedScheduledTime = null;
 
-  if (orderType === "bulk" && bulkNote) {
-    const parsed = parseBulkQty(bulkNote);
-    qty = parsed.qty;
-  }
-
-  return {
-    food_id: item.food_id,
-    name: item.name,
-    quantity: qty,
-    price: item.price,
-    variant_info: item.variant_info,
-  };
-}),
-      };
-     console.log("PAYLOAD:", {
-  received_amount: cashReceived,
-  payment_mode: paymentMode,
-});
-      const res = await axios.post(`${BILL_API}create_order/`, payload);
-      setSelectedBill(null);
-      setShowPendingModal(true);
-      setCart([]);
-      setAdvanceAmount(0);
-      await fetchPreOrderAlerts();
-      // setTimeout(() => printAdvanceBill(res.data), 500);
-      await fetchBills();
-      setIsViewingBill(false);
-    } catch (err) {
-      console.error("Error creating order:", err);
+    if (orderType === "preorder" && scheduledTime) {
+      const date = new Date(scheduledTime);
+      formattedScheduledTime = date.toISOString().slice(0, 19).replace("T", " ");
     }
-  };
+
+    const payload = {
+      total_amount: subtotal,
+      final_amount: finalTotal,
+      discount_amount: discountValue,
+      credit_used: credit,
+      discount: discount,
+      discount_type: discountType,
+      name: customerName,
+      phone: customerPhone,
+      is_bulk: orderType === "bulk",
+      is_advance: orderType === "preorder",
+      bulk_note: bulkNote,
+      custom_price: customPrice > 0 ? customPrice : null,
+      scheduled_time: formattedScheduledTime,
+      advance_paid: advanceAmount || 0,
+      payment_mode: paymentMode || "cash",
+      status: "pending",
+      cart: cart.map((item) => ({
+        food_id: item.food_id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        variant_info: item.variant_info,
+      })),
+    };
+
+    // ✅ IMPORTANT: store response
+    const res = await axios.post(`${BILL_API}create_order/`, payload);
+
+    // ✅ instant UI update
+    setSavedBills(prev => [res.data, ...prev]);
+
+    // optional background refresh
+    fetchBills();
+
+    setShowPendingModal(true);
+    setCart([]);
+    setAdvanceAmount(0);
+    setSelectedBill(null);
+    setIsViewingBill(false);
+
+  } catch (err) {
+    console.error("Error creating order:", err);
+  } finally {
+    setIsGenerating(false);
+  }
+};
   const parseBulkQty = (note) => {
     if (!note) return { qty: 1, unit: "pcs" };
 
@@ -843,50 +856,51 @@ const updateOrderPrice = async (orderId, newPrice) => {
 const handlePayNow = async () => {
   if (!selectedBill) return;
 
-  try {
-    const total =
-      customPrice > 0
-        ? Number(customPrice)
-        : Number(finalTotal);
+  const total =
+    customPrice > 0
+      ? Number(customPrice)
+      : Number(finalTotal);
 
-    // ✅ UPDATE PRICE BEFORE PAYMENT
-   await axios.post(
-  `${BILL_API}${selectedBill.order_id}/update_price/`,
-  {
-    final_amount: total,
+  const advance = Number(advanceAmount || 0);
+  const remaining = total - advance;
+
+  if (!cashReceived || cashReceived < remaining) {
+    alert("Insufficient amount");
+    return;
   }
-);
- await fetchBills(); // refresh
 
-    const advance = Number(advanceAmount || 0);
-    const remaining = total - advance;
+  setIsPaying(true); // ✅ start loader
 
-    if (!cashReceived || cashReceived < remaining) {
-      alert("Insufficient amount");
-      return;
-    }
-
-    const response = await axios.post(
-      `${BILL_API}${selectedBill.order_id}/mark_paid/`,
-      {
+  try {
+    // ⚡ Run both APIs in parallel
+    const [_, paymentRes] = await Promise.all([
+      axios.post(`${BILL_API}${selectedBill.order_id}/update_price/`, {
+        final_amount: total,
+      }),
+      axios.post(`${BILL_API}${selectedBill.order_id}/mark_paid/`, {
         received_amount: cashReceived,
         payment_mode: paymentMode,
-      }
-    );
+      }),
+    ]);
 
-    const paidBill = response.data;
+    const paidBill = paymentRes.data;
 
-    setTimeout(() => printBill(paidBill), 300);
-
-    // reset...
+    // ⚡ instant UI update (no wait)
     setSelectedBill(null);
     setCart([]);
     setShowPaymentModal(false);
     setCashReceived(0);
 
-    await fetchBills(); // 🔥 refresh again
+    // ⚡ print immediately
+    setTimeout(() => printBill(paidBill), 200);
+
+    // ⚡ refresh in background (no await)
+    fetchBills();
+
   } catch (error) {
     console.error(error);
+  } finally {
+    setIsPaying(false); // ✅ stop loader
   }
 };
   const silentPrint = (htmlContent) => {
@@ -1434,62 +1448,96 @@ const printKOT = () => {
             ) : (
               <motion.div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-10">
   {filteredItems.map((item) => {
-    const variantIndex = selectedVariants[item.food_id] ?? 0;
-    const variant = item.variants?.[variantIndex];
-    const displayPrice = variant?.price ?? item.price;
+  const variantIndex = selectedVariants[item.food_id] ?? 0;
+  const variant = item.variants?.[variantIndex];
+  const unitPrice = variant?.price ?? item.price;
+  const unitText = variant ? `${variant.value} ${variant.unit}` : "qty";
 
-    return (
-      <div
-        key={item.food_id}
-        className="bg-white border rounded-xl p-3 h-full flex flex-col justify-between"
-      >
-        {/* TOP CONTENT */}
-        <div className="gap-1">
-          <div className="flex justify-between"><h3 className="font-bold">
-            {item.name}
-        </h3>
-            {item.variants.length > 0 && (
-              <select
-                className="w-100 border rounded px-2 py-1 text-sm"
-                value={selectedVariants[item.food_id] ?? 0}
-                onChange={(e) => {
-                  setSelectedVariants((prev) => ({
-                    ...prev,
-                    [item.food_id]: Number(e.target.value),
-                  }));
-                }}
-              >
-                {item.variants.map((v, i) => (
-                  <option key={i} value={i}>
-                    {v.value} {v.unit}
-                  </option>
-                ))}
-              </select>
-            )}</div>
-            <p className=" text-sm text-gray-600">{item.description}</p>
+  const enteredQty = customQuantities[item.food_id] || "";
+  const totalItemPrice = enteredQty ? (unitPrice * parseFloat(enteredQty)).toFixed(2) : unitPrice;
+
+  return (
+    <div
+      key={item.food_id}
+      className="bg-white border rounded-xl p-3 h-full flex flex-col justify-between"
+    >
+      {/* TOP CONTENT */}
+      <div className="gap-1">
+        <div className="flex justify-between items-start">
+          <h3 className="font-bold">{item.name}</h3>
+          
+          {item.variants?.length > 0 && (
+            <select
+              className="border rounded px-2 py-1 text-sm text-right"
+              value={variantIndex}
+              onChange={(e) => {
+                setSelectedVariants((prev) => ({
+                  ...prev,
+                  [item.food_id]: Number(e.target.value),
+                }));
+                setCustomQuantities((prev) => ({ ...prev, [item.food_id]: "" }));
+              }}
+            >
+              {item.variants.map((v, i) => (
+                <option key={i} value={i}>
+                  {v.value} {v.unit}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
-        <div className="flex justify-between items-center mt-2">
-          <span className="font-bold text-indigo-600">
-            ₹{displayPrice}
-          </span>
+        <p className="text-sm text-gray-600 ">{item.description}</p>
+      </div>
+
+      {/* Price & Quantity Section */}
+      <div>
+        <div className="font-bold text-indigo-600 text-lg">
+          ₹{totalItemPrice}
+          {enteredQty && <span className="text-sm text-gray-500 font-normal"> ({unitPrice} × {enteredQty})</span>}
+        </div>
+
+        <div className="flex gap-2 ">
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="Qty"
+            className="flex-1 border w-1 h-8 border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            value={enteredQty}
+            onChange={(e) => {
+              setCustomQuantities((prev) => ({
+                ...prev,
+                [item.food_id]: e.target.value,
+              }));
+            }}
+          />
+
           <button
-            onClick={() =>
+            onClick={() => {
+              const qty = parseFloat(customQuantities[item.food_id]);
+              if (!qty || qty <= 0) {
+                alert("Please enter valid quantity");
+                return;
+              }
+
               addToCart({
                 ...item,
-                price: displayPrice,
+                price: unitPrice,
+                quantity: qty,
                 variant_info: variant
-                  ? `${variant.value}_${variant.unit}`
+                  ? `${variant.value} ${variant.unit}`
                   : "default",
-              })
-            }
-            className="bg-indigo-600 text-white px-2 py-1 rounded text-sm" 
+              });
+            }}
+            className="bg-indigo-600 text-white px-5 py-1  h-8 rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
           >
             Add
           </button>
         </div>
       </div>
-    );
-  })}
+    </div>
+  );
+})}
 </motion.div>
             )}
           </div>
@@ -1499,6 +1547,9 @@ const printKOT = () => {
         <div className="w-96 flex flex-col">
           <BillingRightPanel
   cart={cart}
+  isGenerating={isGenerating}
+  isPaying={isPaying}
+
   updateQty={updateQty}
   setCart={setCart}
   setSelectedBill={setSelectedBill}
