@@ -688,40 +688,48 @@ class OrderHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        # Remove 'table' and use 'waiter' instead
-        return Order.objects.select_related('customer').prefetch_related('items').order_by('-created_at')
+        return Order.objects.select_related('customer')\
+                            .prefetch_related('items')\
+                            .order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         try:
             qs = self.get_queryset()
             qs = self.apply_filters(qs, request)
-            
+
             orders = []
             for order in qs:
+                items_list = []
+                for item in order.items.all():
+                    items_list.append({
+                        "name": item.name,
+                        "quantity": float(item.quantity),
+                        "price": float(item.price),
+                        "subtotal": float(item.quantity) * float(item.price),
+                        "variant_info": getattr(item, 'variant_info', None),   # Safe access
+                    })
+
                 orders.append({
                     "order_id": order.order_id,
-                    "total_amount": str(order.total_amount),
-                    "received_amount": str(order.received_amount),
-                    "balance_amount": str((order.total_amount or 0) - (order.received_amount or 0)),
-                    "payment_mode": order.payment_mode,
-                    "status": order.status,
+                    "daily_order_number": order.daily_order_number,
+                    "total_amount": float(order.total_amount or 0),
+                    "received_amount": float(order.received_amount or 0),
+                    "balance_amount": float((order.total_amount or 0) - (order.received_amount or 0)),
+                    "payment_mode": order.payment_mode or "",
+                    "status": order.status or "",
                     "created_at": order.created_at.isoformat(),
                     "paid_at": order.paid_at.isoformat() if order.paid_at else None,
                     "customer_name": order.customer.name if order.customer else "Walk-in",
-                    "items": [
-                        {
-                            "name": item.name,
-                            "quantity": item.quantity,
-                            "price": str(item.price),
-                            "subtotal": str(item.quantity * float(item.price)),
-                        }
-                        for item in order.items.all()
-                    ],
-})
+                    "items": items_list,
+                })
+
             return Response({"orders": orders})
+
         except Exception as e:
-            print(f"Error in list view: {str(e)}")
-            return Response({"error": "Internal server error"}, status=500)
+            print(f"Error in OrderHistory list view: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=500)
 
     def apply_filters(self, qs, request):
         """Apply filters to queryset"""

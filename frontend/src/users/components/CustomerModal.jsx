@@ -119,223 +119,216 @@ calculatedTotalPrice = basePrice * Number(qty);
   const balance = Math.max(0, finalCustomPrice - discountValue - finalAdvance);
 
   /* ---------------- UI ---------------- */
-  return (
+return (
   <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-[200]">
-  <motion.div
-    initial={{ scale: 0.9 }}
-    animate={{ scale: 1 }}
-    className="bg-white w-full max-w-lg rounded-2xl shadow-xl"
-  >
-
-    {/* HEADER */}
-    <div className="flex justify-between items-center p-4 border-b">
-      <h2 className="font-bold text-lg flex items-center gap-2">
-        <User size={18} /> Customer Details
-      </h2>
-      <button onClick={onClose}>
-        <X />
-      </button>
-    </div>
-
-    {/* BODY */}
-    <div className="p-3s space-y-4 max-h-[70vh] overflow-y-auto">
-
-      {/* PHONE + NAME */}
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          placeholder="Phone"
-          maxLength={10}
-          value={customerPhone}
-          onChange={(e) => {
-            const phone = e.target.value.replace(/\D/g, "");
-            setCustomerPhone(phone);
-            if (phone.length === 10) searchCustomer(phone);
-          }}
-          className="border p-2 rounded"
-        />
-
-        <input
-          placeholder="Name"
-          value={customerName}
-          onChange={(e) => setCustomerName(e.target.value)}
-          className="border p-2 rounded"
-        />
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className="bg-white w-full max-w-lg rounded-xl shadow-xl overflow-hidden"
+    >
+      {/* HEADER */}
+      <div className="flex justify-between items-center p-4 border-b bg-gray-50">
+        <h2 className="font-semibold text-lg flex items-center gap-2">
+          <User size={18} /> Customer Details
+        </h2>
+        <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded">
+          <X />
+        </button>
       </div>
 
-      {/* CREDIT */}
-      {/* {customerFound && (
-        <div className="text-green-600 text-sm font-semibold">
-          Credits Available: ₹{customerCredits}
-        </div>
-      )} */}
+      {/* BODY */}
+      <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
 
-      {/* DISCOUNT */}
-      <div className="flex gap-2">
-        <select
-          value={discountType}
-          onChange={(e) => setDiscountType(e.target.value)}
-          className="border p-2 rounded bg-gray-50 text-sm"
-        >
-          <option value="fixed">₹</option>
-          <option value="percentage">%</option>
-        </select>
-
-        <input
-          type="number"
-          placeholder="Discount"
-          value={discount === 0 ? "" : discount}
-          onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-          className="border p-2 rounded w-full"
-        />
-      </div>
-
-      {/* ORDER TYPE */}
-      <select
-        value={orderType}
-        onChange={(e) => setOrderType(e.target.value)}
-        className="border p-2 w-full rounded"
-      >
-        <option value="normal">Normal</option>
-        <option value="bulk">Bulk</option>
-        <option value="preorder">Pre Order</option>
-      </select>
-
-      {/* BULK */}
-      {orderType === "bulk" && (
-        <div className="space-y-3 bg-gray-50 p-3 rounded-xl border">
-
-         <div className="relative">
-  <input
-    type="text"
-    placeholder="Search & select item..."
-    value={searchItem}
-    onChange={(e) => {
-      setSearchItem(e.target.value);
-      setShowDropdown(true);
-    }}
-    onFocus={() => setShowDropdown(true)}
-    className="border p-2 rounded w-full"
-  />
-
-  {showDropdown && (
-    <div className="absolute z-10 bg-white border w-full mt-1 rounded max-h-40 overflow-y-auto shadow">
-      {filteredMenuItems.length > 0 ? (
-        filteredMenuItems.map((item) => (
-          <div
-            key={item.food_id}
-            onClick={() => {
-              setSelectedItem(item);
-              setSearchItem(item.name); // show selected name
-              setShowDropdown(false);
+        {/* PHONE + NAME */}
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            placeholder="Phone"
+            maxLength={10}
+            value={customerPhone}
+            onChange={(e) => {
+              const phone = e.target.value.replace(/\D/g, "");
+              setCustomerPhone(phone);
+              if (phone.length === 10) searchCustomer(phone);
             }}
-            className="p-2 hover:bg-indigo-100 cursor-pointer"
-          >
-            {item.name} - ₹{item.price}
-          </div>
-        ))
-      ) : (
-        <div className="p-2 text-gray-400">No items found</div>
-      )}
-    </div>
-  )}
-</div>
+            className="border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+          />
 
+          <input
+            placeholder="Name"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            className="border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+          />
+        </div>
+
+        {/* DISCOUNT */}
+        <div className="flex gap-2">
           <select
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-            className="border p-2 rounded w-full"
+            value={discountType}
+            onChange={(e) => setDiscountType(e.target.value)}
+            className="border p-2.5 rounded-lg bg-gray-50"
           >
-            <option value="qty">Quantity</option>
-            <option value="kg">KG</option>
+            <option value="fixed">₹</option>
+            <option value="percentage">%</option>
           </select>
 
           <input
             type="number"
-            placeholder={`Enter ${unit}`}
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            className="border p-2 rounded w-full"
+            placeholder="Discount"
+            value={discount === 0 ? "" : discount}
+            onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+            className="border p-2.5 rounded-lg w-full"
           />
-
-          <div className="flex items-center gap-2 border p-2 rounded bg-blue-50">
-            <Tag size={14} />
-            <span>₹{customPrice}</span>
-          </div>
         </div>
-      )}
 
-      {/* ADVANCE */}
-      <div className="flex items-center gap-2 border p-2 rounded bg-yellow-50">
-        <CreditCard size={14} />
-        <input
-          type="number"
-          placeholder="Advance"
-          value={advanceAmount}
-          onChange={(e) => setAdvanceAmount(e.target.value)}
-          className="bg-transparent w-full outline-none"
-        />
-      </div>
-
-      {/* SUMMARY */}
-      {finalCustomPrice > 0 && (
-        <div className="text-sm space-y-1 border-t pt-2">
-
-          <div className="flex justify-between">
-            <span>Total</span>
-            <span>₹{finalCustomPrice.toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between text-green-600">
-            <span>
-              Discount ({discountType === "percentage" ? `${discount}%` : "₹"})
-            </span>
-            <span>-₹{discountValue.toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between text-blue-600">
-            <span>Advance</span>
-            <span>-₹{finalAdvance.toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between font-bold text-green-700">
-            <span>Balance</span>
-            <span>₹{balance.toFixed(2)}</span>
-          </div>
-
-        </div>
-      )}
-
-      {/* SOURCE */}
-      <div className="flex gap-2">
+        {/* ORDER TYPE */}
         <select
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          className="border p-2 w-1/2 rounded"
+          value={orderType}
+          onChange={(e) => setOrderType(e.target.value)}
+          className="border p-2.5 w-full rounded-lg"
         >
-          <option value="offline">Offline</option>
-          <option value="zomato">Zomato</option>
-          <option value="swiggy">Swiggy</option>
+          <option value="normal">Normal</option>
+          <option value="bulk">Bulk</option>
+          <option value="preorder">Pre Order</option>
         </select>
 
-        <input
-          placeholder="External Order ID"
-          value={externalOrderId}
-          onChange={(e) => setExternalOrderId(e.target.value)}
-          className="border p-2 w-1/2 rounded"
-        />
-      </div>
-    </div>
+        {/* BULK */}
+        {orderType === "bulk" && (
+          <div className="space-y-3 bg-gray-50 p-4 rounded-xl border">
 
-    {/* FOOTER */}
-    <div className="p-4 border-t">
-      <button
-        onClick={onClose}
-        className="w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold"
-      >
-        Done
-      </button>
-    </div>
-  </motion.div>
-</div>
-  );
+            {/* SEARCH */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search item..."
+                value={searchItem}
+                onChange={(e) => {
+                  setSearchItem(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                className="border p-2.5 rounded-lg w-full"
+              />
+
+              {showDropdown && (
+                <div className="absolute z-10 bg-white border w-full mt-1 rounded-lg max-h-40 overflow-y-auto shadow">
+                  {filteredMenuItems.length > 0 ? (
+                    filteredMenuItems.map((item) => (
+                      <div
+                        key={item.food_id}
+                        onClick={() => {
+                          setSelectedItem(item);
+                          setSearchItem(item.name);
+                          setShowDropdown(false);
+                        }}
+                        className="p-2 hover:bg-indigo-100 cursor-pointer text-sm"
+                      >
+                        {item.name} - ₹{item.price}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-2 text-gray-400">No items found</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* UNIT */}
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="border p-2.5 rounded-lg w-full"
+            >
+              <option value="qty">Quantity</option>
+              <option value="kg">KG</option>
+            </select>
+
+            {/* QTY */}
+            <input
+              type="number"
+              placeholder={`Enter ${unit}`}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              className="border p-2.5 rounded-lg w-full"
+            />
+
+            {/* PRICE */}
+            <div className="flex items-center justify-between border p-2.5 rounded-lg bg-blue-50 text-indigo-700 font-semibold">
+              <span>Total</span>
+              <span>₹{Number(customPrice).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* ADVANCE */}
+        <div className="flex items-center gap-2 border p-2.5 rounded-lg bg-yellow-50">
+          <CreditCard size={16} />
+          <input
+            type="number"
+            placeholder="Advance"
+            value={advanceAmount}
+            onChange={(e) => setAdvanceAmount(e.target.value)}
+            className="bg-transparent w-full outline-none"
+          />
+        </div>
+
+        {/* SUMMARY */}
+        {finalCustomPrice > 0 && (
+          <div className="text-sm space-y-2 border-t pt-3">
+
+            <div className="flex justify-between">
+              <span>Total</span>
+              <span>₹{finalCustomPrice.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between text-green-600">
+              <span>Discount</span>
+              <span>-₹{discountValue.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between text-blue-600">
+              <span>Advance</span>
+              <span>-₹{finalAdvance.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between font-bold text-lg text-indigo-700">
+              <span>Balance</span>
+              <span>₹{balance.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* SOURCE */}
+        <div className="flex gap-2">
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            className="border p-2.5 w-1/2 rounded-lg"
+          >
+            <option value="offline">Offline</option>
+            <option value="zomato">Zomato</option>
+            <option value="swiggy">Swiggy</option>
+          </select>
+
+          <input
+            placeholder="Order ID"
+            value={externalOrderId}
+            onChange={(e) => setExternalOrderId(e.target.value)}
+            className="border p-2.5 w-1/2 rounded-lg"
+          />
+        </div>
+      </div>
+
+      {/* FOOTER */}
+      <div className="p-4 border-t bg-gray-50">
+        <button
+          onClick={onClose}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-semibold"
+        >
+          Done
+        </button>
+      </div>
+    </motion.div>
+  </div>
+);
 }

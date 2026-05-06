@@ -2,7 +2,6 @@
 from decimal import Decimal
 
 from decimal import Decimal
-
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -19,7 +18,7 @@ from management.models import RestaurantSetting
 
 
 class CashierOrderViewSet(viewsets.ModelViewSet):
-   
+    
     queryset = Order.objects.prefetch_related('items').order_by('-created_at')
     serializer_class = OrderSerializer
     permission_classes = [AllowAny]  # Use IsAuthenticated in production
@@ -195,7 +194,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             # ───── TAX ─────
             # ───── TAX ─────
             tax_obj = TaxSetting.objects.first()
-            tax_percentage = tax_obj.percentage if tax_obj and tax_obj.enabled else Decimal('0')
+            tax_percentage = Decimal(str(tax_obj.percentage)) if tax_obj and tax_obj.enabled else Decimal('0')
 
             subtotal_after_discount = total - discount
 
@@ -249,8 +248,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                     order=order,
                     food_id=item.get('food_id'),
                     name=item['name'],
-                    quantity=item['quantity'],
-                    price=item['price']
+                    quantity=Decimal(str(item['quantity'])),
+                    price=Decimal(str(item['price'])),
                 ))
             OrderItem.objects.bulk_create(items)
 
@@ -426,8 +425,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             order = self.get_object()
 
             # Calculate remaining refundable amount
-            remaining = float(order.total_amount) - float(order.refunded_amount or 0)
-            amount = float(request.data.get('amount', 0))
+            remaining = Decimal(str(order.total_amount)) - Decimal(str(order.refunded_amount or 0))
+            amount = Decimal(str(request.data.get('amount', 0)))
 
             if order.is_refunded and remaining <= 0:
                 return Response(
@@ -481,10 +480,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def orders(self, request, pk=None):
         customer = self.get_object()
-        # Fetch all orders for this customer, including their items
         orders = Order.objects.filter(customer=customer).prefetch_related('items').order_by('-created_at')
         
-        # We reuse the OrderSerializer you already have
         serializer = OrderSerializer(orders, many=True)
         
         return Response({
@@ -515,7 +512,7 @@ def set_tax(request):
     tax, _ = TaxSetting.objects.get_or_create(id=1)
 
     tax.enabled = request.data.get("enabled", True)
-    tax.percentage = request.data.get("percentage", 5)
+    tax.percentage = Decimal(str(request.data.get("percentage", 5)))
     tax.save()
 
     return Response({"message": "Tax updated"})
