@@ -422,7 +422,6 @@ const handleSaveSettings = async () => {
       email: adminEmail,
     });
 
-    // 🔥 IMPORTANT: refresh UI
     fetchReportEmail();
 
   } catch (error) {
@@ -534,7 +533,7 @@ const addToCart = (newItem) => {
   }
 
   // Clear quantity field after adding
-  setCustomQuantities(prev => ({ ...prev, [newItem.food_id]: "" }));
+  setCustomQuantities(prev => ({ ...prev, [newItem.food_id]: 1 }));
 };
 
  const updateQty = (foodId, variant, type) => {
@@ -1453,7 +1452,7 @@ const printKOT = () => {
   const unitPrice = variant?.price ?? item.price;
   const unitText = variant ? `${variant.value} ${variant.unit}` : "qty";
 
-  const enteredQty = customQuantities[item.food_id] || "";
+  const enteredQty = customQuantities[item.food_id] || "1";
   const totalItemPrice = enteredQty ? (unitPrice * parseFloat(enteredQty)).toFixed(2) : unitPrice;
 
   return (
@@ -1498,41 +1497,41 @@ const printKOT = () => {
 
         <div className="flex gap-2 ">
           <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="Qty"
-            className="flex-1 border w-1 h-8 border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-indigo-500"
-            value={enteredQty}
-            onChange={(e) => {
-              setCustomQuantities((prev) => ({
-                ...prev,
-                [item.food_id]: e.target.value,
-              }));
-            }}
-          />
-
+  type="number"
+  step="0.01"
+  min="0.01"
+  placeholder="Qty"
+  className="flex-1 border w-1 h-8 border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-indigo-500"
+  value={enteredQty}
+  onChange={(e) => {
+    setCustomQuantities((prev) => ({
+      ...prev,
+      [item.food_id]: e.target.value,
+    }));
+  }}
+/>
           <button
-            onClick={() => {
-              const qty = parseFloat(customQuantities[item.food_id]);
-              if (!qty || qty <= 0) {
-                alert("Please enter valid quantity");
-                return;
-              }
+  onClick={() => {
+    const qty = parseFloat(customQuantities[item.food_id] || 1);
 
-              addToCart({
-                ...item,
-                price: unitPrice,
-                quantity: qty,
-                variant_info: variant
-                  ? `${variant.value} ${variant.unit}`
-                  : "default",
-              });
-            }}
-            className="bg-indigo-600 text-white px-5 py-1  h-8 rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
-          >
-            Add
-          </button>
+    if (!qty || qty <= 0) {
+      alert("Please enter valid quantity");
+      return;
+    }
+
+    addToCart({
+      ...item,
+      price: unitPrice,
+      quantity: qty,
+      variant_info: variant
+        ? `${variant.value} ${variant.unit}`
+        : "default",
+    });
+  }}
+  className="bg-indigo-600 text-white px-5 py-1 h-8 rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
+>
+  Add
+</button>
         </div>
       </div>
     </div>
