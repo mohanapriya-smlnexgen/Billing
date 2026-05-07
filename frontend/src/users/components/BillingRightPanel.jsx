@@ -17,7 +17,8 @@ import {
   Calendar,
   FileText,
   Truck,
-} from "lucide-react";
+    X,
+  } from "lucide-react";
 import CustomerModal from "./CustomerModal";
 
 
@@ -189,24 +190,45 @@ export const BillingRightPanel = (props) => {
 
         {/* ✅ OLD SIMPLE CONTROLS */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() =>
-              updateQty(item.food_id, item.variant_info, "dec")
-            }
-          >
-            <Minus size={14} />
-          </button>
+  <button
+    onClick={() =>
+      updateQty(item.food_id, item.variant_info, "dec")
+    }
+    className="p-1 rounded hover:bg-gray-100"
+  >
+    <Minus size={14} />
+  </button>
 
-          <span>{item.quantity}</span>
+  <span>{item.quantity}</span>
 
-          <button
-            onClick={() =>
-              updateQty(item.food_id, item.variant_info, "inc")
-            }
-          >
-            <Plus size={14} />
-          </button>
-        </div>
+  <button
+    onClick={() =>
+      updateQty(item.food_id, item.variant_info, "inc")
+    }
+    className="p-1 rounded hover:bg-gray-100"
+  >
+    <Plus size={14} />
+  </button>
+
+  {/* ✅ REMOVE ITEM BUTTON */}
+  <button
+    onClick={() => {
+      setCart((prev) =>
+        prev.filter(
+          (_, i) =>
+            !(
+              i === index &&
+              item.food_id === prev[i].food_id &&
+              item.variant_info === prev[i].variant_info
+            )
+        )
+      );
+    }}
+    className="p-1 rounded hover:bg-red-100 text-red-500"
+  >
+    <X size={14} />
+  </button>
+</div>
       </div>
     </div>
   );

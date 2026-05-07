@@ -112,7 +112,17 @@ calculatedTotalPrice = basePrice * Number(qty);
     return d;
   }, [discount, discountType, customPrice]);
 
-  const finalCustomPrice = Number(customPrice) || 0;
+const cartSubtotal = useMemo(() => {
+  return cart.reduce(
+    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+    0
+  );
+}, [cart]);
+
+const finalCustomPrice =
+  orderType === "bulk"
+    ? Number(customPrice) || 0
+    : cartSubtotal;
   const finalAdvance = Number(advanceAmount) || 0;
 
   // ✅ Balance = (Total - Discount) - Advance
