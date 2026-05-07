@@ -502,7 +502,44 @@ const handleSaveSettings = async () => {
       setSavedBills([]);
     }
   };
+const normalizeText = (text = "") => {
+  const map = {
+    ғ: "f",
+    ʀ: "r",
+    ᴇ: "e",
+    ɴ: "n",
+    ᴄ: "c",
+    ʜ: "h",
+    ɪ: "i",
+    s: "s",
+    ᴛ: "t",
+    ʏ: "y",
+    ᴜ: "u",
+    ᴅ: "d",
+    ʙ: "b",
+    ᴍ: "m",
+    ᴘ: "p",
+    ʟ: "l",
+    ᴋ: "k",
+    ᴡ: "w",
+    ɢ: "g",
+    ᴏ: "o",
+    ᴀ: "a",
+    ᴠ: "v",
+    ᴊ: "j",
+    ǫ: "q",
+    x: "x",
+    z: "z",
+  };
 
+  return text
+    .toLowerCase()
+    .split("")
+    .map((char) => map[char] || char)
+    .join("")
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, "");
+};
 const filteredItems = useMemo(() => {
   return menuItems.filter((item) => {
     const matchCategory =
@@ -511,7 +548,9 @@ const filteredItems = useMemo(() => {
     const matchSubCategory =
       selectedSubCategory === "all" || item.subcategory === selectedSubCategory;
 
-    const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = normalizeText(item.name).includes(
+      normalizeText(search)
+    );
 
     return matchCategory && matchSubCategory && matchSearch;
   });
@@ -1452,7 +1491,10 @@ const printKOT = () => {
   const unitPrice = variant?.price ?? item.price;
   const unitText = variant ? `${variant.value} ${variant.unit}` : "qty";
 
-  const enteredQty = customQuantities[item.food_id] || "1";
+  const enteredQty =
+  customQuantities[item.food_id] !== undefined
+    ? customQuantities[item.food_id]
+    : "1";
   const totalItemPrice = enteredQty ? (unitPrice * parseFloat(enteredQty)).toFixed(2) : unitPrice;
 
   return (
