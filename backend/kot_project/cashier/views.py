@@ -12,7 +12,7 @@ from datetime import date
 
 from django.conf import settings
 from .models import DiscountSetting, Order, OrderItem, Customer
-from .serializers import CustomerSerializer, OrderSerializer
+from .serializers import CustomerSerializer, OrderHistorySerializer, OrderSerializer
 from management.models import AdminUser
 from management.models import RestaurantSetting
 
@@ -22,7 +22,58 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.prefetch_related('items').order_by('-created_at')
     serializer_class = OrderSerializer
     permission_classes = [AllowAny]  # Use IsAuthenticated in production
+    @action(detail=False, methods=['get'], url_path='history')
+    def history(self, request):
+
+        orders = (
+            Order.objects
+            .select_related('customer')
+            .defer(
+                'bulk_note',
+                'external_order_id',
+                'source',
+                'paid_at',
+                'refunded_amount',
+                'tax_amount',
+                'discount_amount',
+                'credit_used',
+                'received_amount',
+                'scheduled_time',
+            )
+            .order_by('-created_at')
+        )
+
+        serializer = OrderHistorySerializer(orders, many=True)
+
+        return Response(serializer.data)
+    @action(detail=False, methods=['get'], url_path='preorder-history')
+    def preorder_history(self, request):
+
+        orders = (
+            Order.objects
+            .filter(
+                Q(is_advance=True) | Q(is_bulk=True)
+            )
+            .select_related('customer')
+            .defer(
+                'bulk_note',
+                'external_order_id',
+                'source',
+                'paid_at',
+                'refunded_amount',
+                'tax_amount',
+                'discount_amount',
+                'credit_used',
+                'received_amount',
+            )
+            .order_by('-created_at')
+        )
+
+        serializer = OrderHistorySerializer(orders, many=True)
+
+        return Response(serializer.data)
     @action(detail=False, methods=['get'], url_path='search_customer')
+    
     def search_customer(self, request):
         phone = request.query_params.get('phone')
 

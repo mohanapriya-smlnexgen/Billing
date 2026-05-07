@@ -22,29 +22,17 @@ const PreOrderHistory = () => {
   }, [search, statusFilter, dateFilter, orders]);
 
   // ✅ FETCH ORDERS
-  const fetchOrders = async () => {
-    try {
-      const res = await API.get("cashier-orders/");
+ const fetchOrders = async () => {
+  try {
+    const res = await API.get("cashier-orders/preorder-history/");
 
-      const data = Array.isArray(res.data)
-  ? res.data
-  : Array.isArray(res.data?.results)
-  ? res.data.results
-  : [];
-
-      // ✅ Correct Pre-order Logic
-      const advanceOrders = data.filter(
-  (o) => o.is_advance === true || o.is_bulk === true
-);
-
-      setOrders(advanceOrders);
-    } catch (err) {
-      console.error("Failed to fetch preorder history", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+    setOrders(res.data || []);
+  } catch (err) {
+    console.error("Failed to fetch preorder history", err);
+  } finally {
+    setLoading(false);
+  }
+};
   // ✅ APPLY FILTERS
   const applyFilters = () => {
     let data = [...orders];
@@ -79,7 +67,7 @@ const PreOrderHistory = () => {
   // ✅ EXPORT TO EXCEL
   const exportToExcel = () => {
     const excelData = filtered.map((o) => ({
-      OrderID: o.id,
+      OrderID: o.order_id,
       Customer: o.customer?.name || "Guest",
       Phone: o.customer?.phone || "-",
       Total: o.total_amount,
@@ -202,7 +190,7 @@ const PreOrderHistory = () => {
             ) : (
               filtered.map((o) => (
                 <tr
-                  key={o.id}
+                  key={o.order_id}
                   className="border-b hover:bg-gray-50 text-sm"
                 >
                  <td className="p-3 font-medium">{o.order_id}</td>

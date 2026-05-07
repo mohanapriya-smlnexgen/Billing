@@ -321,6 +321,7 @@ export const BillingRightPanel = (props) => {
       {showCustomerModal && (
         <CustomerModal
           open={showCustomerModal}
+          
           onClose={() => setShowCustomerModal(false)}
           customerPhone={customerPhone}
           setCustomerPhone={setCustomerPhone}

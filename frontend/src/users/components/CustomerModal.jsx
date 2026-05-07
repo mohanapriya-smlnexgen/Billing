@@ -11,6 +11,8 @@ export default function CustomerModal({
   searchCustomer,
   customerFound,
   customerCredits,
+  scheduledTime,
+  setScheduledTime,
   discount,
   setDiscount,
   orderType,
@@ -190,7 +192,21 @@ return (
             className="border p-2.5 rounded-lg w-full"
           />
         </div>
+        {/* SCHEDULED TIME */}
+{(orderType === "bulk" || orderType === "preorder") && (
+  <div className="space-y-2">
+    <label className="text-sm font-medium text-gray-700">
+      Scheduled Time
+    </label>
 
+    <input
+      type="datetime-local"
+      value={scheduledTime || ""}
+      onChange={(e) => setScheduledTime(e.target.value)}
+      className="border p-2.5 w-full rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+    />
+  </div>
+)}
         {/* ORDER TYPE */}
         <select
           value={orderType}

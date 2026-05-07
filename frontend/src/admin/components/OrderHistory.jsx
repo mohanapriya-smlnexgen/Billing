@@ -16,45 +16,63 @@ const OrderHistory = () => {
   const [paymentFilter, setPaymentFilter] = useState("all");
 const [showPaymentDropdown, setShowPaymentDropdown] = useState(false);
 const filtered = useMemo(() => {
-  let data = [...orders];
-
-  if (search) {
-    const term = search.toLowerCase();
-    data = data.filter((o) =>
-      o.customer?.name?.toLowerCase().includes(term) ||
-      o.customer?.phone?.includes(term) ||
-      o.order_id.toString().includes(term)
-    );
-  }
-
-  if (statusFilter !== "all") {
-    data = data.filter((o) => o.status === statusFilter);
-  }
-
-  if (typeFilter !== "all") {
-    if (typeFilter === "preorder") {
-      data = data.filter((o) => o.is_advance === true);
-    } else if (typeFilter === "bulk") {
-      data = data.filter((o) => o.is_bulk === true);
+  return orders.filter((o) => {
+    if (
+      search &&
+      !o.searchable.includes(search.toLowerCase())
+    ) {
+      return false;
     }
-  }
 
-  if (dateFilter) {
-    data = data.filter((o) => {
-      if (!o.created_at) return false;
-      const orderDate = new Date(o.created_at).toISOString().split("T")[0];
-      return orderDate === dateFilter;
-    });
-  }
+    if (
+      statusFilter !== "all" &&
+      o.status !== statusFilter
+    ) {
+      return false;
+    }
 
-  if (paymentFilter !== "all") {
-    data = data.filter(
-      (o) => (o.payment_mode || "").toLowerCase() === paymentFilter
-    );
-  }
+    if (
+      typeFilter === "preorder" &&
+      !o.is_advance
+    ) {
+      return false;
+    }
 
-  return data;
-}, [orders, search, statusFilter, typeFilter, dateFilter, paymentFilter]);
+    if (
+      typeFilter === "bulk" &&
+      !o.is_bulk
+    ) {
+      return false;
+    }
+
+    if (dateFilter) {
+      const orderDate = new Date(o.created_at)
+        .toISOString()
+        .split("T")[0];
+
+      if (orderDate !== dateFilter) {
+        return false;
+      }
+    }
+
+    if (
+      paymentFilter !== "all" &&
+      (o.payment_mode || "").toLowerCase() !==
+        paymentFilter
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}, [
+  orders,
+  search,
+  statusFilter,
+  typeFilter,
+  dateFilter,
+  paymentFilter,
+]);
   useEffect(() => {
     fetchOrders();
   }, []);
@@ -84,7 +102,7 @@ const getStatusBadge = (status) => {
 };
   const fetchOrders = async () => {
     try {
-      const res = await API.get("cashier-orders/");
+      const res = await API.get("cashier-orders/history/");
       const data = Array.isArray(res.data)
         ? res.data
         : Array.isArray(res.data?.results)
@@ -108,46 +126,46 @@ const getStatusBadge = (status) => {
     }
   };
 
-  const applyFilters = () => {
-    let data = [...orders];
+//   const applyFilters = () => {
+//     let data = [...orders];
 
-    if (search) {
-      const term = search.toLowerCase();
-      data = data.filter((o) =>
-        o.customer?.name?.toLowerCase().includes(term) ||
-        o.customer?.phone?.includes(term) ||
-        o.order_id.toString().includes(term)
-      );
-    }
+//     if (search) {
+//       const term = search.toLowerCase();
+//       data = data.filter((o) =>
+//         o.customer?.name?.toLowerCase().includes(term) ||
+//         o.customer?.phone?.includes(term) ||
+//         o.order_id.toString().includes(term)
+//       );
+//     }
 
-    if (statusFilter !== "all") {
-      data = data.filter((o) => o.status === statusFilter);
-    }
+//     if (statusFilter !== "all") {
+//       data = data.filter((o) => o.status === statusFilter);
+//     }
 
-    if (typeFilter !== "all") {
-      if (typeFilter === "preorder") {
-        data = data.filter((o) => o.is_advance === true);
-      } else if (typeFilter === "bulk") {
-        data = data.filter((o) => o.is_bulk === true);
-      }
-    }
+//     if (typeFilter !== "all") {
+//       if (typeFilter === "preorder") {
+//         data = data.filter((o) => o.is_advance === true);
+//       } else if (typeFilter === "bulk") {
+//         data = data.filter((o) => o.is_bulk === true);
+//       }
+//     }
 
-    if (dateFilter) {
-      data = data.filter((o) => {
-        if (!o.created_at) return false;
-        const orderDate = new Date(o.created_at).toISOString().split("T")[0];
-        return orderDate === dateFilter;
-      });
-    }
-    // ✅ PAYMENT FILTER
-if (paymentFilter !== "all") {
-  data = data.filter(
-    (o) => (o.payment_mode || "").toLowerCase() === paymentFilter
-  );
-}
-    setFiltered(data);
+//     if (dateFilter) {
+//       data = data.filter((o) => {
+//         if (!o.created_at) return false;
+//         const orderDate = new Date(o.created_at).toISOString().split("T")[0];
+//         return orderDate === dateFilter;
+//       });
+//     }
+//     // ✅ PAYMENT FILTER
+// if (paymentFilter !== "all") {
+//   data = data.filter(
+//     (o) => (o.payment_mode || "").toLowerCase() === paymentFilter
+//   );
+// }
+//     setFiltered(data);
 
-  };
+//   };
 
   const getNumericValue = (value) => {
     if (!value) return 0;
@@ -163,8 +181,7 @@ if (paymentFilter !== "all") {
     };
 
     filtered.forEach(order => {
-      const total = getNumericValue(order.custom_price || order.final_amount || order.total_amount || 0);
-      
+      const total = order.total;
       if (order.is_bulk) {
         stats.bulk.count++;
         stats.bulk.totalValue += total;
@@ -181,7 +198,7 @@ if (paymentFilter !== "all") {
   }, [filtered]);
 
   const exportToExcel = () => {
-    const excelData = filtered.map((o) => ({
+    const excelData = filtered.slice(0, 100).map((o) => ({
       OrderID: `#${o.order_id}`,
       OrderNo: `#${o.daily_order_number || o.order_id}`, 
       Type: o.is_bulk ? "Bulk Order" : o.is_advance ? "Pre Order" : "Normal",
@@ -401,10 +418,7 @@ if (paymentFilter !== "all") {
               o.custom_price || o.final_amount || o.total_amount || 0
             );
 
-            const remaining =
-              o.remaining_amount !== null && o.remaining_amount !== undefined
-                ? getNumericValue(o.remaining_amount)
-                : total - getNumericValue(o.advance_paid || 0);
+            const remaining = o.remaining;
 
             return (
               <tr key={o.order_id} className="hover:bg-gray-50 transition">

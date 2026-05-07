@@ -9,6 +9,7 @@ import {
   ShoppingCart,
   CheckCircle,
   X,
+  Truck,
   LogOut,
   ClipboardList,
   User,
@@ -104,6 +105,8 @@ const [tempGstin, setTempGstin] = useState("");
   const [paymentMode, setPaymentMode] = useState("cash");
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [customerName, setCustomerName] = useState("");
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+const [deliverySearch, setDeliverySearch] = useState("");
 const [restaurantPhone, setRestaurantPhone] = useState("");
 const [restaurantGstin, setRestaurantGstin] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -266,6 +269,32 @@ useEffect(() => {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+  const deliveryOrders = useMemo(() => {
+  const today = new Date().toLocaleDateString("en-CA");
+
+  return savedBills.filter((bill) => {
+    // only unpaid orders
+    if (bill.status === "paid") return false;
+
+    // must have scheduled time
+    if (!bill.scheduled_time) return false;
+
+    const scheduledDate = new Date(bill.scheduled_time)
+      .toLocaleDateString("en-CA");
+
+    const matchToday = scheduledDate === today;
+
+    const matchSearch =
+      !deliverySearch ||
+      bill.order_id.toString().includes(deliverySearch) ||
+      (bill.customer?.name || "")
+        .toLowerCase()
+        .includes(deliverySearch.toLowerCase()) ||
+      (bill.customer?.phone || "").includes(deliverySearch);
+
+    return matchToday && matchSearch;
+  });
+}, [savedBills, deliverySearch]);
 const subCategories = useMemo(() => {
   if (selectedCategory === "all") return ["all"];
 
@@ -1364,6 +1393,19 @@ const printKOT = () => {
               </span>
             )}
           </button>
+          {/* Delivery Button */}
+<button
+  onClick={() => setShowDeliveryModal(true)}
+  className="relative p-2 hover:bg-blue-50 rounded-full transition-colors"
+>
+  <Truck size={20} className="text-blue-600" />
+
+  {deliveryOrders.length > 0 && (
+    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+      {deliveryOrders.length}
+    </span>
+  )}
+</button>
 
           <button
             onClick={() => navigate("/dashboard")}
@@ -1590,7 +1632,6 @@ const printKOT = () => {
   cart={cart}
   isGenerating={isGenerating}
   isPaying={isPaying}
-
   updateQty={updateQty}
   setCart={setCart}
   setSelectedBill={setSelectedBill}
@@ -2135,6 +2176,176 @@ taxPercentage={taxConfig.percentage}
           </Modal>
         )}
       </AnimatePresence>
+    <AnimatePresence>
+  {showDeliveryModal && (
+    <Modal
+      title="Today's Deliveries"
+      onClose={() => {
+        setShowDeliveryModal(false);
+        setDeliverySearch("");
+      }}
+    >
+      <div className="space-y-4">
+
+        {/* Search Bar */}
+        <div className="relative">
+          <Search
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+            size={20}
+          />
+
+          <input
+            type="text"
+            placeholder="Search by Order ID, Customer Name or Phone..."
+            className="w-full pl-12 py-3.5 h-10 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-base"
+            value={deliverySearch}
+            onChange={(e) => setDeliverySearch(e.target.value)}
+          />
+        </div>
+
+        {/* Delivery Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto pr-2">
+
+          {deliveryOrders.length === 0 ? (
+            <div className="col-span-3 text-center py-16 text-gray-400">
+              <Truck size={48} className="mx-auto mb-4" />
+              <p className="text-lg">No deliveries for today</p>
+            </div>
+          ) : (
+            deliveryOrders.map((b) => {
+
+              const total = Number(
+                b.custom_price ||
+                b.final_amount ||
+                b.total_amount ||
+                0
+              );
+
+              const paid =
+                Number(b.received_amount || 0) +
+                Number(b.advance_paid || 0);
+
+              const due = total - paid;
+
+              return (
+                <div
+                  key={b.order_id}
+                  onClick={() => {
+                    handleSelectBill(b);
+                    setShowDeliveryModal(false);
+                  }}
+                  className="bg-white border border-gray-200 hover:border-blue-500 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-md group h-full flex flex-col"
+                >
+
+                  {/* Top */}
+                  <div className="flex justify-between items-start mb-2">
+
+                    {/* Left */}
+                    <div>
+                      <p className="font-mono text-xl font-bold text-blue-600">
+                        #{b.order_id}
+                      </p>
+
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(
+                          b.scheduled_time
+                        ).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+
+                    {/* Customer */}
+                    <div className="flex-1 text-right">
+                      <p className="font-medium text-gray-900 text-base">
+                        {b.customer?.name || "Guest"}
+                      </p>
+
+                      {b.customer?.phone && (
+                        <p className="text-xs text-gray-500">
+                          {b.customer.phone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Delivery Time */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mt-2 flex justify-between items-center">
+                    <span className="text-sm text-gray-600">
+                      Delivery Time
+                    </span>
+
+                    <span className="font-semibold text-blue-700">
+                      {new Date(
+                        b.scheduled_time
+                      ).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+
+                  {/* Due */}
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-end">
+
+                    <div>
+                      <p className="text-xs text-gray-500">
+                        Due Amount
+                      </p>
+
+                      <p className="text-2xl font-bold text-blue-600">
+                        ₹{due.toFixed(2)}
+                      </p>
+                    </div>
+
+                    <span className="text-blue-600 text-sm group-hover:underline">
+                      Open →
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        {deliveryOrders.length > 0 && (
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex justify-between text-sm">
+
+            <div>
+              Total Deliveries:{" "}
+              <span className="font-bold text-gray-900">
+                {deliveryOrders.length}
+              </span>
+            </div>
+
+            <div className="text-blue-600 font-medium">
+              Total Due: ₹
+              {deliveryOrders
+                .reduce((sum, b) => {
+                  const total = Number(
+                    b.custom_price ||
+                    b.final_amount ||
+                    b.total_amount ||
+                    0
+                  );
+
+                  const paid =
+                    Number(b.received_amount || 0) +
+                    Number(b.advance_paid || 0);
+
+                  return sum + (total - paid);
+                }, 0)
+                .toFixed(2)}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )}
+</AnimatePresence>
     </div>
   );
 
