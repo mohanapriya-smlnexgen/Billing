@@ -64,7 +64,14 @@ class Order(models.Model):
 
     refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     daily_order_number = models.IntegerField(editable=False, null=True, blank=True) 
-    
+    class Meta:
+        indexes = [
+            models.Index(fields=['created_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['payment_mode']),
+            models.Index(fields=['is_bulk']),
+            models.Index(fields=['is_advance']),
+        ]
     # NEW FIELD
     def save(self, *args, **kwargs):
         if not self.pk:
@@ -81,6 +88,7 @@ class Order(models.Model):
                     self.daily_order_number = 1
 
         super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"Order #{self.daily_order_number} ({self.created_at.date()})"
     def balance_amount(self):
