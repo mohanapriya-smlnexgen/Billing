@@ -1029,10 +1029,10 @@ silentPrint(`
   <html>
   <head>
     <style>
-      @page { size: 80mm auto; margin: 0; }
+      @page { size: 60mm auto; margin: 0; }
 
       body {
-        width: 70mm;
+        width: 50mm;
         margin: 0 auto;
         padding: 5px;
         font-family: monospace;
@@ -1065,8 +1065,8 @@ silentPrint(`
         border-bottom: 1px solid #000;
       }
 
-      .item { width: 50%; }
-      .qty { width: 15%; text-align: center; }
+      .item { width: 35%; }
+      .qty { width: 10%; text-align: center; }
       .amt { width: 35%; text-align: right; }
     </style>
   </head>
@@ -2193,7 +2193,6 @@ taxPercentage={taxConfig.percentage}
             className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
             size={20}
           />
-
           <input
             type="text"
             placeholder="Search by Order ID, Customer Name or Phone..."
@@ -2202,10 +2201,8 @@ taxPercentage={taxConfig.percentage}
             onChange={(e) => setDeliverySearch(e.target.value)}
           />
         </div>
-
         {/* Delivery Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto pr-2">
-
           {deliveryOrders.length === 0 ? (
             <div className="col-span-3 text-center py-16 text-gray-400">
               <Truck size={48} className="mx-auto mb-4" />
@@ -2213,20 +2210,16 @@ taxPercentage={taxConfig.percentage}
             </div>
           ) : (
             deliveryOrders.map((b) => {
-
               const total = Number(
                 b.custom_price ||
                 b.final_amount ||
                 b.total_amount ||
                 0
               );
-
               const paid =
                 Number(b.received_amount || 0) +
                 Number(b.advance_paid || 0);
-
               const due = total - paid;
-
               return (
                 <div
                   key={b.order_id}
@@ -2236,16 +2229,13 @@ taxPercentage={taxConfig.percentage}
                   }}
                   className="bg-white border border-gray-200 hover:border-blue-500 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-md group h-full flex flex-col"
                 >
-
                   {/* Top */}
                   <div className="flex justify-between items-start mb-2">
-
                     {/* Left */}
                     <div>
                       <p className="font-mono text-xl font-bold text-blue-600">
                         #{b.order_id}
                       </p>
-
                       <p className="text-xs text-gray-500 mt-1">
                         {new Date(
                           b.scheduled_time
@@ -2256,13 +2246,11 @@ taxPercentage={taxConfig.percentage}
                         })}
                       </p>
                     </div>
-
                     {/* Customer */}
                     <div className="flex-1 text-right">
                       <p className="font-medium text-gray-900 text-base">
                         {b.customer?.name || "Guest"}
                       </p>
-
                       {b.customer?.phone && (
                         <p className="text-xs text-gray-500">
                           {b.customer.phone}
@@ -2270,7 +2258,6 @@ taxPercentage={taxConfig.percentage}
                       )}
                     </div>
                   </div>
-
                   {/* Delivery Time */}
                   <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mt-2 flex justify-between items-center">
                     <span className="text-sm text-gray-600">
