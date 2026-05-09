@@ -1200,10 +1200,10 @@ const printKOT = () => {
   <html>
   <head>
     <style>
-      @page { size: 80mm auto; margin: 0; }
+      @page { size: 60mm auto; margin: 0; }
 
       body {
-        width: 70mm;
+        width: 50mm;
         margin: 0 auto;
         padding: 6px;
         font-family: monospace;
