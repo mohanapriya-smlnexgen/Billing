@@ -668,7 +668,7 @@ const paid =
 const dueAmount = safeNumber(finalTotal) - paid;
   const balance = cashReceived - dueAmount;
 
-const handleGenerateBill = async () => {
+const handleGenerateBill = async (autoPayment = false) => {
   if (cart.length === 0) return;
 
   setIsGenerating(true);
@@ -678,7 +678,11 @@ const handleGenerateBill = async () => {
 
     if (orderType === "preorder" && scheduledTime) {
       const date = new Date(scheduledTime);
-      formattedScheduledTime = date.toISOString().slice(0, 19).replace("T", " ");
+
+      formattedScheduledTime = date
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
     }
 
     const payload = {
@@ -698,6 +702,7 @@ const handleGenerateBill = async () => {
       advance_paid: advanceAmount || 0,
       payment_mode: paymentMode || "cash",
       status: "pending",
+
       cart: cart.map((item) => ({
         food_id: item.food_id,
         name: item.name,
@@ -707,19 +712,37 @@ const handleGenerateBill = async () => {
       })),
     };
 
-    // ✅ IMPORTANT: store response
-    const res = await axios.post(`${BILL_API}create_order/`, payload);
+    const res = await axios.post(
+      `${BILL_API}create_order/`,
+      payload
+    );
 
-    // ✅ instant UI update
-    setSavedBills(prev => [res.data, ...prev]);
+    setSavedBills((prev) => [res.data, ...prev]);
 
-    // optional background refresh
     fetchBills();
 
-    setShowPendingModal(true);
-    setCart([]);
+    // IMPORTANT
+    setSelectedBill(res.data);
+
+    // ======================
+    // NORMAL FLOW
+    // ======================
+    if (!autoPayment) {
+      setShowPendingModal(true);
+
+      // clear cart only here
+      setCart([]);
+    }
+
+    // ======================
+    // SAVE & PRINT FLOW
+    // ======================
+    if (autoPayment) {
+      // keep cart until payment completed
+      setShowPaymentModal(true);
+    }
+
     setAdvanceAmount(0);
-    setSelectedBill(null);
     setIsViewingBill(false);
 
   } catch (err) {
@@ -939,31 +962,42 @@ const handlePayNow = async () => {
   setIsPaying(true); // ✅ start loader
 
   try {
-    // ⚡ Run both APIs in parallel
-    const [_, paymentRes] = await Promise.all([
-      axios.post(`${BILL_API}${selectedBill.order_id}/update_price/`, {
-        final_amount: total,
-      }),
-      axios.post(`${BILL_API}${selectedBill.order_id}/mark_paid/`, {
-        received_amount: cashReceived,
-        payment_mode: paymentMode,
-      }),
-    ]);
+   // ✅ FIRST update price
+await axios.post(
+  `${BILL_API}${selectedBill.order_id}/update_price/`,
+  {
+    final_amount: total,
+  }
+);
 
+// ✅ THEN mark paid
+const paymentRes = await axios.post(
+  `${BILL_API}${selectedBill.order_id}/mark_paid/`,
+  {
+    received_amount: cashReceived,
+    payment_mode: paymentMode,
+  }
+);
     const paidBill = paymentRes.data;
-
-    // ⚡ instant UI update (no wait)
     setSelectedBill(null);
     setCart([]);
-    setShowPaymentModal(false);
-    setCashReceived(0);
-
-    // ⚡ print immediately
-    setTimeout(() => printBill(paidBill), 200);
-
-    // ⚡ refresh in background (no await)
-    fetchBills();
-
+    setCustomerName("");
+setCustomerPhone("");
+setCustomerFound(false);
+setCustomerCredits(0);
+setCustomerId(null);
+setDiscount(0);
+setCredit(0);
+setAdvanceAmount(0);
+setCustomPrice(0);
+setBulkNote("");
+setScheduledTime("");
+setOrderType("normal");
+setPaymentMode("cash");
+setCashReceived(0);
+setShowPaymentModal(false);
+setTimeout(() => printBill(paidBill), 200);
+fetchBills();
   } catch (error) {
     console.error(error);
   } finally {

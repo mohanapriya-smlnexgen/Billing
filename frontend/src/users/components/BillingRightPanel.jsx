@@ -280,27 +280,43 @@ export const BillingRightPanel = (props) => {
           </>
         )}
 
-        <button
-  onClick={
-    !selectedBill
-      ? handleGenerateBill
-      : () => setShowPaymentModal(true)
-  }
-  disabled={isGenerating || isPaying}
-  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold mt-3 disabled:bg-gray-300 flex items-center justify-center gap-2"
->
-  {(isGenerating || isPaying) && (
-    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-  )}
+    <div className="flex gap-2 mt-3">
+  {/* NORMAL FLOW */}
+  <button
+    onClick={
+      !selectedBill
+        ? () => handleGenerateBill(false)
+        : () => setShowPaymentModal(true)
+    }
+    disabled={isGenerating || isPaying}
+    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold disabled:bg-gray-300 flex items-center justify-center gap-2"
+  >
+    {(isGenerating || isPaying) && (
+      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+    )}
 
-  {selectedBill
-    ? isPaying
-      ? "Processing..."
-      : "Proceed Payment"
-    : isGenerating
-    ? "Generating..."
-    : "Generate Bill"}
-</button>
+    {selectedBill
+      ? isPaying
+        ? "Processing..."
+        : "Proceed Payment"
+      : isGenerating
+      ? "Generating..."
+      : "Save"}
+  </button>
+
+  {/* SAVE & PRINT FLOW */}
+  {!selectedBill && (
+    <button
+      onClick={() => handleGenerateBill(true)}
+      disabled={isGenerating || isPaying}
+      className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-semibold disabled:bg-gray-300 flex items-center justify-center gap-2"
+    >
+      <Printer size={18} />
+
+      {isGenerating ? "Saving..." : "Save & Print"}
+    </button>
+  )}
+</div>
 
         <div className="flex gap-2">
           <button
