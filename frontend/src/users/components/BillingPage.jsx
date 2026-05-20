@@ -91,6 +91,7 @@ const [tempGstin, setTempGstin] = useState("");
   const [loading, setLoading] = useState(true);
   const [savedBills, setSavedBills] = useState([]);
   const [preOrderAlerts, setPreOrderAlerts] = useState([]);
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [activeAlertTab, setActiveAlertTab] = useState("all");
   const [selectedBill, setSelectedBill] = useState(null);
@@ -107,12 +108,16 @@ const [tempGstin, setTempGstin] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
 const [deliverySearch, setDeliverySearch] = useState("");
+const [deliveringOrders, setDeliveringOrders] = useState(new Set());
 const [restaurantPhone, setRestaurantPhone] = useState("");
 const [restaurantGstin, setRestaurantGstin] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [discount, setDiscount] = useState(0);
   const [credit, setCredit] = useState(0);
   const [bulkNote, setBulkNote] = useState("");
+  const [splitPayments, setSplitPayments] = useState([
+  { id: Date.now(), mode: "cash", amount: 0 }
+]);
   const [scheduledTime, setScheduledTime] = useState("");
   const [source, setSource] = useState("offline");
   const [externalOrderId, setExternalOrderId] = useState("");
@@ -203,7 +208,7 @@ useEffect(() => {
 
   fetchTax();
 }, []);
-// const tax = taxEnabled ? subtotal * (taxPercentage / 100) : 0;
+
   const fetchPreOrderAlerts = async () => {
     try {
       const res = await axios.get(BILL_API);
@@ -269,24 +274,28 @@ useEffect(() => {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
-  const deliveryOrders = useMemo(() => {
+const deliveryOrders = useMemo(() => {
   const today = new Date().toLocaleDateString("en-CA");
 
   return savedBills.filter((bill) => {
-    // only unpaid orders
-    if (bill.status === "paid") return false;
-
-    // must have scheduled time
+    // Must have scheduled delivery time
     if (!bill.scheduled_time) return false;
 
-    const scheduledDate = new Date(bill.scheduled_time)
-      .toLocaleDateString("en-CA");
+    // Hide only delivered orders
+    if (bill.is_delivered === true) return false;
+
+    // Ignore cancelled
+    if (bill.status === "cancelled") return false;
+
+    const scheduledDate = new Date(
+      bill.scheduled_time
+    ).toLocaleDateString("en-CA");
 
     const matchToday = scheduledDate === today;
 
     const matchSearch =
       !deliverySearch ||
-      bill.order_id.toString().includes(deliverySearch) ||
+      bill.order_id?.toString().includes(deliverySearch) ||
       (bill.customer?.name || "")
         .toLowerCase()
         .includes(deliverySearch.toLowerCase()) ||
@@ -304,41 +313,41 @@ const subCategories = useMemo(() => {
 
   return ["all", ...new Set(subs)];
 }, [menuItems, selectedCategory]);
-  const filteredOrders = useMemo(() => {
-    let filtered = preOrderAlerts;
+const filteredOrders = useMemo(() => {
+  let filtered = preOrderAlerts;
 
-    // Apply tab filter
+  // Apply tab filter
+  filtered = filtered.filter((order) => {
+    if (activeAlertTab === "all") return true;
+    if (activeAlertTab === "preorder") return order.is_advance === true;
+    if (activeAlertTab === "bulk") return order.is_bulk === true;
+    if (activeAlertTab === "normal") return !order.is_advance && !order.is_bulk;
+    return true;
+  });
+
+  // Apply search filter
+  if (searchTerm) {
+    const searchLower = searchTerm.toLowerCase();
     filtered = filtered.filter((order) => {
-      if (activeAlertTab === "all") return true;
-      if (activeAlertTab === "preorder") return order.is_advance === true;
-      if (activeAlertTab === "bulk") return order.is_bulk === true;
-      if (activeAlertTab === "normal") return !order.is_advance && !order.is_bulk;
-      return true;
+      return (
+        order.order_id.toString().includes(searchLower) ||
+        (order.customer?.name || "").toLowerCase().includes(searchLower) ||
+        (order.customer?.phone || "").includes(searchTerm)
+      );
     });
+  }
 
-    // Apply search filter
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter((order) => {
-        return (
-          order.order_id.toString().includes(searchLower) ||
-          (order.customer?.name || "").toLowerCase().includes(searchLower) ||
-          (order.customer?.phone || "").includes(searchTerm)
-        );
-      });
-    }
+  // Apply date filter
+  if (dateFilter) {
+    filtered = filtered.filter((order) => {
+      const displayTime = order.scheduled_time || order.created_at;
+      const orderDate = new Date(displayTime).toISOString().split("T")[0];
+      return orderDate === dateFilter;
+    });
+  }
 
-    // Apply date filter
-    if (dateFilter) {
-      filtered = filtered.filter((order) => {
-        const displayTime = order.scheduled_time || order.created_at;
-        const orderDate = new Date(displayTime).toISOString().split("T")[0];
-        return orderDate === dateFilter;
-      });
-    }
-
-    return filtered;
-  }, [preOrderAlerts, activeAlertTab, searchTerm, dateFilter]);
+  return filtered;
+}, [preOrderAlerts, activeAlertTab, searchTerm, dateFilter]);
 
   const filteredPendingOrders = useMemo(() => {
     const pendingOrders = savedBills.filter((b) => b.status !== "paid");
@@ -665,7 +674,28 @@ const paid =
   safeNumber(selectedBill?.advance_paid) +
   safeNumber(selectedBill?.received_amount);
 
-const dueAmount = safeNumber(finalTotal) - paid;
+// Add this near other calculations (after finalTotal)
+// Replace your current dueAmount useMemo with this clean version
+const dueAmount = useMemo(() => {
+  if (!selectedBill) return 0;
+
+  const subtotal = Number(selectedBill.total_amount || 0);
+  const discount = Number(selectedBill.discount_amount || 0);
+  const tax = Number(selectedBill.tax_amount || 0);
+  const credit = Number(selectedBill.credit_used || 0);
+
+  let total = Number(selectedBill.final_amount || 0);
+
+  // Force correct calculation if backend failed
+  if (total === 0 || total >= subtotal) {
+    total = subtotal - discount + tax - credit;
+  }
+
+  const alreadyPaid = Number(selectedBill.advance_paid || 0) + 
+                     Number(selectedBill.received_amount || 0);
+
+  return Math.max(total - alreadyPaid, 0);
+}, [selectedBill]);
   const balance = cashReceived - dueAmount;
 
 const handleGenerateBill = async (autoPayment = false) => {
@@ -676,69 +706,68 @@ const handleGenerateBill = async (autoPayment = false) => {
   try {
     let formattedScheduledTime = null;
 
-    if (orderType === "preorder" && scheduledTime) {
+    if (orderType === "preorder" || orderType === "bulk" && scheduledTime) {
       const date = new Date(scheduledTime);
+      formattedScheduledTime = date.toISOString().slice(0, 19).replace("T", " ");
+    }
 
-      formattedScheduledTime = date
-        .toISOString()
-        .slice(0, 19)
-        .replace("T", " ");
+    const cleanedCart = cart.map((item) => ({
+      food_id: Number(item.food_id),
+      name: item.name,
+      quantity: Number(item.quantity),
+      price: Number(item.price),
+      variant_info: item.variant_info === "default" ? null : (item.variant_info || null)
+    }));
+
+    // 🔥 FIX: Ensure bulk_note is never null
+    let bulkNoteValue = "";
+    if (orderType === "bulk" && bulkNote) {
+      bulkNoteValue = bulkNote;
     }
 
     const payload = {
-      total_amount: subtotal,
-      final_amount: finalTotal,
-      discount_amount: discountValue,
-      credit_used: credit,
-      discount: discount,
+      total_amount: Number(subtotal),
+      final_amount: Number(finalTotal),
+      discount_amount: Number(discountValue),
+      credit_used: Number(credit),
+      discount: Number(discount),
       discount_type: discountType,
-      name: customerName,
-      phone: customerPhone,
+      name: customerName || "Guest",
+      phone: customerPhone || "",
       is_bulk: orderType === "bulk",
       is_advance: orderType === "preorder",
-      bulk_note: bulkNote,
-      custom_price: customPrice > 0 ? customPrice : null,
+      bulk_note: bulkNoteValue, // 🔥 Always send string, never null
+      custom_price: customPrice > 0 ? Number(customPrice) : null,
       scheduled_time: formattedScheduledTime,
-      advance_paid: advanceAmount || 0,
+      advance_paid: Number(advanceAmount) || 0,
       payment_mode: paymentMode || "cash",
       status: "pending",
-
-      cart: cart.map((item) => ({
-        food_id: item.food_id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        variant_info: item.variant_info,
-      })),
+      source: source || "offline",
+      external_order_id: externalOrderId || "",
+      cart: cleanedCart,
     };
 
-    const res = await axios.post(
-      `${BILL_API}create_order/`,
-      payload
-    );
+    // Remove undefined values
+    Object.keys(payload).forEach(key => {
+      if (payload[key] === undefined) {
+        delete payload[key];
+      }
+    });
+
+    console.log("Sending payload:", JSON.stringify(payload, null, 2));
+
+    const res = await axios.post(`${BILL_API}create_order/`, payload);
 
     setSavedBills((prev) => [res.data, ...prev]);
-
     fetchBills();
-
-    // IMPORTANT
     setSelectedBill(res.data);
 
-    // ======================
-    // NORMAL FLOW
-    // ======================
     if (!autoPayment) {
       setShowPendingModal(true);
-
-      // clear cart only here
       setCart([]);
     }
 
-    // ======================
-    // SAVE & PRINT FLOW
-    // ======================
     if (autoPayment) {
-      // keep cart until payment completed
       setShowPaymentModal(true);
     }
 
@@ -747,6 +776,13 @@ const handleGenerateBill = async (autoPayment = false) => {
 
   } catch (err) {
     console.error("Error creating order:", err);
+    
+    if (err.response?.data) {
+      console.error("Backend error details:", err.response.data);
+      if (err.response.data.detail) {
+        alert(`Order creation failed: ${err.response.data.detail}`);
+      }
+    }
   } finally {
     setIsGenerating(false);
   }
@@ -876,14 +912,11 @@ ${taxConfig.enabled ? `
   <span>₹${tax.toFixed(2)}</span>
 </div>
 ` : ""}
-
 <div class="line"></div>
-
 <div class="row" style="font-weight:bold">
   <span>Grand Total</span>
   <span>₹${total.toFixed(2)}</span>
 </div>
-
 ${advance > 0 ? `
 <div class="row">
   <span>Advance</span>
@@ -913,12 +946,11 @@ const handleSelectBill = (bill) => {
     name: item.name,
     quantity: Number(item.quantity),
     price: Number(item.price),
-    variant_info: item.variant_info || "default", // ✅ IMPORTANT
+    variant_info: item.variant_info || "default",
   }));
 
   setCart(mappedItems);
 
-  // ✅ restore other values (VERY IMPORTANT)
   setCustomerName(bill.customer?.name || "");
   setCustomerPhone(bill.customer?.phone || "");
 
@@ -926,11 +958,11 @@ const handleSelectBill = (bill) => {
   setCredit(Number(bill.credit_used || 0));
   setAdvanceAmount(Number(bill.advance_paid || 0));
   setCustomPrice(Number(bill.custom_price || 0));
-
   setPaymentMode(bill.payment_mode || "cash");
 
   setShowPendingModal(false);
   setShowAlertModal(false);
+  setShowDeliveryModal(false);
 };
 const updateOrderPrice = async (orderId, newPrice) => {
   try {
@@ -943,68 +975,102 @@ const updateOrderPrice = async (orderId, newPrice) => {
     console.error("Price update failed", err);
   }
 };
-const handlePayNow = async () => {
+const addSplitPayment = () => {
+  setSplitPayments([...splitPayments, {
+    id: Date.now(),
+    mode: "upi",
+    amount: 0
+  }]);
+};
+const resetSplitPayments = () => {
+  setSplitPayments([{ id: Date.now(), mode: "cash", amount: 0 }]);
+  setIsSplitPayment(false);
+};
+const getTotalSplitAmount = () => {
+  return splitPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+};
+const getRemaining = () => {
+  return dueAmount - getTotalSplitAmount();
+};
+const updateSplitPayment = (id, field, value) => {
+  setSplitPayments(prev =>
+    prev.map(p => p.id === id ? { ...p, [field]: value } : p)
+  );
+};
+const removeSplitPayment = (id) => {
+  if (splitPayments.length <= 1) return; // Keep at least one row
+  setSplitPayments(prev => prev.filter(p => p.id !== id));
+};
+const handleSplitPaymentConfirm = async () => {
   if (!selectedBill) return;
 
-  const total =
-    customPrice > 0
-      ? Number(customPrice)
-      : Number(finalTotal);
+  const totalPaid = getTotalSplitAmount();
 
-  const advance = Number(advanceAmount || 0);
-  const remaining = total - advance;
-
-  if (!cashReceived || cashReceived < remaining) {
-    alert("Insufficient amount");
+  if (totalPaid < dueAmount - 0.01) {
+    alert("Total payment must be equal to or greater than due amount");
     return;
   }
 
-  setIsPaying(true); // ✅ start loader
+  setIsPaying(true);
 
   try {
-   // ✅ FIRST update price
-await axios.post(
-  `${BILL_API}${selectedBill.order_id}/update_price/`,
-  {
-    final_amount: total,
-  }
-);
+    await axios.post(
+      `${BILL_API}${selectedBill.order_id}/update_price/`,
+      {
+        final_amount: Number(dueAmount) + Number(selectedBill?.advance_paid || 0)
+      }
+    );
+    const isSinglePayment = splitPayments.length === 1;
+    const finalPaymentMode = isSinglePayment 
+      ? splitPayments[0].mode 
+      : "split";
 
-// ✅ THEN mark paid
-const paymentRes = await axios.post(
-  `${BILL_API}${selectedBill.order_id}/mark_paid/`,
-  {
-    received_amount: cashReceived,
-    payment_mode: paymentMode,
-  }
-);
+    const payload = {
+      received_amount: totalPaid,
+      payment_mode: finalPaymentMode,
+    };
+    if (!isSinglePayment && splitPayments.length > 1) {
+      payload.split_payments = splitPayments.map(p => ({
+        mode: p.mode,
+        amount: Number(p.amount)
+      }));
+    }
+    const paymentRes = await axios.post(
+      `${BILL_API}${selectedBill.order_id}/mark_paid/`,
+      payload
+    );
     const paidBill = paymentRes.data;
-    setSelectedBill(null);
+    setShowPaymentModal(false);
+    resetSplitPayments();
     setCart([]);
     setCustomerName("");
-setCustomerPhone("");
-setCustomerFound(false);
-setCustomerCredits(0);
-setCustomerId(null);
-setDiscount(0);
-setCredit(0);
-setAdvanceAmount(0);
-setCustomPrice(0);
-setBulkNote("");
-setScheduledTime("");
-setOrderType("normal");
-setPaymentMode("cash");
-setCashReceived(0);
-setShowPaymentModal(false);
-setTimeout(() => printBill(paidBill), 200);
-fetchBills();
+    setCustomerPhone("");
+    setCustomerFound(false);
+    setCustomerCredits(0);
+    setCustomerId(null);
+    setDiscount(0);
+    setCredit(0);
+    setAdvanceAmount(0);
+    setCustomPrice(0);
+    setBulkNote("");
+    setScheduledTime("");
+    setOrderType("normal");
+    setPaymentMode("cash");
+    setCashReceived(0);
+    setTimeout(() => printBill(paidBill), 300);
+    fetchBills();
   } catch (error) {
-    console.error(error);
+    console.error("Payment error:", error);
+    if (error.response?.status === 400) {
+      alert("Backend doesn't support split payment yet.\n\nPlease update your backend or use single payment mode.");
+    } else {
+      alert("Payment failed. Please try again.");
+    }
   } finally {
-    setIsPaying(false); // ✅ stop loader
+    setIsPaying(false);
   }
 };
-  const silentPrint = (htmlContent) => {
+const silentPrint = (htmlContent) => {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.right = "0";
@@ -1024,9 +1090,10 @@ fetchBills();
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
 
-    // remove iframe after print
     setTimeout(() => {
-      document.body.removeChild(iframe);
+      if (iframe.parentNode) {
+        document.body.removeChild(iframe);
+      }
     }, 1000);
   };
 };
@@ -1366,6 +1433,28 @@ const printKOT = () => {
   </html>
   `);
 };
+const pendingPreOrders = useMemo(() => {
+  return savedBills.filter((o) => {
+    const total = Number(
+      o.custom_price ||
+      o.final_amount ||
+      o.total_amount ||
+      0
+    );
+
+    const paid =
+      Number(o.received_amount || 0) +
+      Number(o.advance_paid || 0);
+
+    const balance = total - paid;
+
+    return (
+      o.is_advance === true &&
+      balance > 0 &&
+      o.status !== "paid"
+    );
+  });
+}, [savedBills]);
 
   return (
     <div className="h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
@@ -1967,7 +2056,7 @@ taxPercentage={taxConfig.percentage}
         />
       </div>
 
-      {/* Orders Grid - 3 cards per row */}
+      {/* Orders Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto pr-2">
         {filteredPendingOrders.length === 0 ? (
           <div className="col-span-3 text-center py-16 text-gray-400">
@@ -1976,9 +2065,19 @@ taxPercentage={taxConfig.percentage}
           </div>
         ) : (
           filteredPendingOrders.map((b) => {
-            const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
-            const paid = Number(b.received_amount || b.advance_paid || 0);
-            const due = total - paid;
+            // === SAME ROBUST CALCULATION AS DELIVERY & PAYMENT ===
+            const subtotal = Number(b.total_amount || 0);
+            const discount = Number(b.discount_amount || 0);
+            const tax = Number(b.tax_amount || 0);
+            const credit = Number(b.credit_used || 0);
+
+            let total = Number(b.final_amount || 0);
+            if (total === 0 || total === subtotal) {
+              total = subtotal - discount + tax - credit;
+            }
+
+            const paid = Number(b.received_amount || 0) + Number(b.advance_paid || 0);
+            const due = Math.max(total - paid, 0);
 
             return (
               <div
@@ -1998,25 +2097,20 @@ taxPercentage={taxConfig.percentage}
                       })}
                     </p>
                   </div>
-                   {/* Customer Info */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <div>
-                      <p className="font-medium text-gray-900 text-base">
-                        {b.customer?.name || "Guest"}
-                      </p>
-                      {b.customer?.phone && (
-                        <p className="text-xs text-gray-500">{b.customer.phone}</p>
-                      )}
-                    </div>
+
+                  {/* Customer Info */}
+                  <div className="text-right">
+                    <p className="font-medium text-gray-900 text-base">
+                      {b.customer?.name || "Guest"}
+                    </p>
+                    {b.customer?.phone && (
+                      <p className="text-xs text-gray-500">{b.customer.phone}</p>
+                    )}
                   </div>
                 </div>
-                </div>
-
-               
 
                 {/* Due Amount */}
-                <div className="mt-1 pt-2 border-t border-gray-100 flex justify-between items-end">
+                <div className="mt-auto pt-3 border-t border-gray-100 flex justify-between items-end">
                   <div>
                     <p className="text-xs text-gray-500">Due Amount</p>
                     <p className="text-2xl font-bold text-blue-600">₹{due.toFixed(2)}</p>
@@ -2039,9 +2133,16 @@ taxPercentage={taxConfig.percentage}
           </div>
           <div className="text-blue-600 font-medium">
             Total Due: ₹{filteredPendingOrders.reduce((sum, b) => {
-              const total = Number(b.custom_price || b.final_amount || b.total_amount || 0);
-              const paid = Number(b.received_amount || b.advance_paid || 0);
-              return sum + (total - paid);
+              const subtotal = Number(b.total_amount || 0);
+              const discount = Number(b.discount_amount || 0);
+              const tax = Number(b.tax_amount || 0);
+              const credit = Number(b.credit_used || 0);
+              let total = Number(b.final_amount || 0);
+              if (total === 0 || total === subtotal) {
+                total = subtotal - discount + tax - credit;
+              }
+              const paid = Number(b.received_amount || 0) + Number(b.advance_paid || 0);
+              return sum + Math.max(total - paid, 0);
             }, 0).toFixed(2)}
           </div>
         </div>
@@ -2051,321 +2152,310 @@ taxPercentage={taxConfig.percentage}
 )}
 
       {/* Payment Modal */}
-      <AnimatePresence>
-       {showPaymentModal && selectedBill && (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    
-    {/* Payment Card */}
-    <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-5 space-y-4">
+   <AnimatePresence>
+  {showPaymentModal && selectedBill && (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-5">
 
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-xs text-gray-500">Order #{selectedBill.order_id}</p>
-          <p className="text-2xl font-bold text-gray-900">
-            ₹{dueAmount.toFixed(2)}
-          </p>
+        {/* Header */}
+        <div className="flex justify-between items-start bg-blue-100 rounded-2xl p-5">
+          <div>
+            <p className="text-s text-gray-800">Order #{selectedBill.order_id}</p>
+            <p className="text-3xl font-bold text-gray-900">
+              ₹{dueAmount.toFixed(2)}
+            </p>
+            <p className="text-sm text-gray-500">Due Amount</p>
+          </div>
+          <button
+            onClick={() => {
+              setShowPaymentModal(false);
+              resetSplitPayments();
+            }}
+            className="text-gray-400 hover:text-red-500 text-2xl"
+          >
+            ✕
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowPaymentModal(false)}
-          className="text-gray-400 hover:text-red-500 text-lg"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Due */}
-      <div className="bg-red-50 border border-red-100 rounded-2xl p-3 flex justify-between">
-        <span className="text-sm text-gray-600">Due Amount</span>
-        <span className="font-bold text-red-600">
-          ₹{dueAmount.toFixed(2)}
-        </span>
-      </div>
-
-      {/* Payment Mode */}
-      <div>
-        <label className="text-xs font-semibold text-gray-600">Payment Mode</label>
-        <div className="grid grid-cols-3 gap-2 mt-2">
-          {['cash', 'upi', 'card'].map((mode) => (
+        {/* Split Payments List */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-gray-700">Split Payments</h3>
             <button
-              key={mode}
-              onClick={() =>{ setPaymentMode(mode)
-                 console.log("Clicked:", mode)}
-              }
-              
-              className={`py-2 rounded-xl text-xs font-semibold uppercase border transition ${
-                paymentMode === mode
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white border-gray-200 text-gray-600'
-              }`}
+              onClick={addSplitPayment}
+              className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
             >
-              {mode}
+              <Plus size={16} /> Add Method
             </button>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {/* Input */}
-      <div>
-        <label className="text-xs font-semibold text-gray-600">
-          Amount Received
-        </label>
+          {splitPayments.map((payment, index) => (
+            <div key={payment.id} className="flex gap-3 items-center bg-gray-50 p-4 rounded-2xl">
+              {/* Payment Mode */}
+              <select
+                value={payment.mode}
+                onChange={(e) => updateSplitPayment(payment.id, 'mode', e.target.value)}
+                className="border border-gray-300 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-indigo-500"
+              >
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+              </select>
 
-        <div className="relative mt-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-            ₹
-          </span>
-
-          <input
-            type="number"
-            value={cashReceived || ""}
-            onChange={(e) => setCashReceived(Number(e.target.value) || 0)}
-            className="w-full pl-8 pr-3 py-3 text-lg font-semibold border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            placeholder="0.00"
-          />
-        </div>
-      </div>
-
-      {/* Summary */}
-      <div className="bg-gray-50 border rounded-2xl p-4 text-sm space-y-2">
-        <div className="flex justify-between">
-          <span>Received</span>
-          <span className="font-semibold">
-            ₹{Number(cashReceived || 0).toFixed(2)}
-          </span>
-        </div>
-
-        <div className="flex justify-between">
-          <span>Due</span>
-          <span className="font-semibold">
-            ₹{dueAmount.toFixed(2)}
-          </span>
-        </div>
-
-        <div className="flex justify-between border-t pt-2">
-          <span className="font-semibold">Change</span>
-          <span className={balance > 0 ? "text-green-600 font-bold" : "text-gray-400"}>
-            ₹{balance > 0 ? balance.toFixed(2) : "0.00"}
-          </span>
-        </div>
-      </div>
-
-      {/* Button */}
-      <button
-        onClick={handlePayNow}
-        disabled={cashReceived < dueAmount || cashReceived <= 0}
-        className="w-full py-3 rounded-xl text-white font-semibold bg-indigo-600 disabled:bg-gray-300"
-      >
-        Confirm Payment
-      </button>
-    </div>
-  </div>
-)}
- {isEditOpen && (
-          <Modal title="Restaurant Settings" onClose={() => setIsEditOpen(false)}>
-            <div className="space-y-3">
-
-              <input
-                value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
-                placeholder="Restaurant Name"
-                className="w-full border p-2 rounded"
-              />
-
-              <textarea
-                value={tempAddress}
-                onChange={(e) => setTempAddress(e.target.value)}
-                placeholder="Address"
-                className="w-full border p-2 rounded"
-              />
-
-              <input
-                value={tempPhone}
-                onChange={(e) => setTempPhone(e.target.value)}
-                placeholder="Mobile Number"
-                className="w-full border p-2 rounded"
-              />
-
-              <input
-                value={tempGstin}
-                onChange={(e) => setTempGstin(e.target.value)}
-                placeholder="GSTIN"
-                className="w-full border p-2 rounded"
-              />
-
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setIsEditOpen(false)}
-                  className="px-3 py-1 bg-gray-200 rounded"
-                >Cancel</button>
-
-                <button
-                  onClick={handleSaveSettings}
-                  className="px-3 py-1 bg-indigo-600 text-white rounded"
-                >Save</button>
+              {/* Amount Input */}
+              <div className="flex-1 relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">₹</span>
+                <input
+                  type="number"
+                  value={payment.amount || ""}
+                  onChange={(e) => updateSplitPayment(payment.id, 'amount', Number(e.target.value))}
+                  className="w-full pl-8 pr-4 py-3 text-lg font-semibold border border-gray-300 rounded-xl focus:outline-none focus:border-indigo-500"
+                  placeholder="0.00"
+                />
               </div>
 
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
-    <AnimatePresence>
-  {showDeliveryModal && (
-    <Modal
-      title="Today's Deliveries"
-      onClose={() => {
-        setShowDeliveryModal(false);
-        setDeliverySearch("");
-      }}
-    >
-      <div className="space-y-4">
-
-        {/* Search Bar */}
-        <div className="relative">
-          <Search
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            type="text"
-            placeholder="Search by Order ID, Customer Name or Phone..."
-            className="w-full pl-12 py-3.5 h-10 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-base"
-            value={deliverySearch}
-            onChange={(e) => setDeliverySearch(e.target.value)}
-          />
-        </div>
-        {/* Delivery Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto pr-2">
-          {deliveryOrders.length === 0 ? (
-            <div className="col-span-3 text-center py-16 text-gray-400">
-              <Truck size={48} className="mx-auto mb-4" />
-              <p className="text-lg">No deliveries for today</p>
-            </div>
-          ) : (
-            deliveryOrders.map((b) => {
-              const total = Number(
-                b.custom_price ||
-                b.final_amount ||
-                b.total_amount ||
-                0
-              );
-              const paid =
-                Number(b.received_amount || 0) +
-                Number(b.advance_paid || 0);
-              const due = total - paid;
-              return (
-                <div
-                  key={b.order_id}
-                  onClick={() => {
-                    handleSelectBill(b);
-                    setShowDeliveryModal(false);
-                  }}
-                  className="bg-white border border-gray-200 hover:border-blue-500 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-md group h-full flex flex-col"
+              {/* Remove Button */}
+              {splitPayments.length > 1 && (
+                <button
+                  onClick={() => removeSplitPayment(payment.id)}
+                  className="text-red-500 hover:bg-red-50 p-3 rounded-xl"
                 >
-                  {/* Top */}
-                  <div className="flex justify-between items-start mb-2">
-                    {/* Left */}
-                    <div>
-                      <p className="font-mono text-xl font-bold text-blue-600">
-                        #{b.order_id}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(
-                          b.scheduled_time
-                        ).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
-                    </div>
-                    {/* Customer */}
-                    <div className="flex-1 text-right">
-                      <p className="font-medium text-gray-900 text-base">
-                        {b.customer?.name || "Guest"}
-                      </p>
-                      {b.customer?.phone && (
-                        <p className="text-xs text-gray-500">
-                          {b.customer.phone}
-                        </p>
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Summary */}
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span>Total Paid</span>
+            <span className="font-semibold">₹{getTotalSplitAmount().toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Due Amount</span>
+            <span className="font-semibold">₹{dueAmount.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2 font-bold">
+            <span>Balance</span>
+            <span className={getRemaining() >= 0 ? "text-green-600" : "text-red-600"}>
+              ₹{getRemaining().toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {/* Confirm Button */}
+        <button
+  onClick={handleSplitPaymentConfirm}
+  disabled={isPaying || getTotalSplitAmount() < dueAmount - 0.01 || getTotalSplitAmount() === 0}
+  className="w-full py-4 rounded-2xl text-white font-semibold bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
+>
+  {isPaying ? "Processing..." : `Confirm Payment (₹${getTotalSplitAmount().toFixed(2)})`}
+</button>
+
+        <p className="text-center text-xs text-gray-500">
+          Total must be equal to or greater than due amount
+        </p>
+      </div>
+    </div>
+  )}
+</AnimatePresence>
+    <AnimatePresence>
+{showDeliveryModal && (
+  <Modal
+    title="Today's Deliveries"
+    onClose={() => {
+      setShowDeliveryModal(false);
+      setDeliverySearch("");
+    }}
+  >
+    <div className="space-y-5">
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+        <input
+          type="text"
+          placeholder="Search by Order ID, Customer Name or Phone..."
+          className="w-full pl-12 pr-4 py-3 h-12 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          value={deliverySearch}
+          onChange={(e) => setDeliverySearch(e.target.value)}
+        />
+      </div>
+
+      {/* Delivery Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 max-h-[65vh] overflow-y-auto pr-1">
+        {deliveryOrders.length === 0 ? (
+          <div className="col-span-3 text-center py-20 text-gray-400">
+            <Truck size={52} className="mx-auto mb-4 text-gray-300" />
+            <p className="text-lg font-medium">No deliveries for today</p>
+            <p className="text-sm text-gray-500 mt-1">All scheduled deliveries will appear here</p>
+          </div>
+        ) : (
+          deliveryOrders.map((b) => {
+            const subtotal = Number(b.total_amount || 0);
+            const discount = Number(b.discount_amount || 0);
+            const tax = Number(b.tax_amount || 0);
+            const credit = Number(b.credit_used || 0);
+
+            let total = Number(b.final_amount || 0);
+            if (total === 0 || total === subtotal) {
+              total = subtotal - discount + tax - credit;
+            }
+
+            const paid = Number(b.received_amount || 0) + Number(b.advance_paid || 0);
+            const due = Math.max(total - paid, 0);
+            const isPaid = due <= 0 || b.status === 'paid';
+
+            const isDelivering = deliveringOrders.has(b.order_id);
+
+            return (
+              <div
+                key={b.order_id}
+                className="bg-white border border-gray-200 rounded-3xl p-5 hover:shadow-xl hover:border-blue-400 transition-all duration-300 flex flex-col"
+              >
+                {/* Header */}
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono text-2xl font-bold text-blue-600">#{b.order_id}</p>
+                      {isPaid ? (
+                        <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 font-semibold">PAID</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-700 font-semibold">PENDING</span>
                       )}
                     </div>
-                  </div>
-                  {/* Delivery Time */}
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mt-2 flex justify-between items-center">
-                    <span className="text-sm text-gray-600">
-                      Delivery Time
-                    </span>
-
-                    <span className="font-semibold text-blue-700">
-                      {new Date(
-                        b.scheduled_time
-                      ).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(b.scheduled_time || b.created_at).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
                       })}
-                    </span>
+                    </p>
                   </div>
 
-                  {/* Due */}
-                  <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-end">
-
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        Due Amount
-                      </p>
-
-                      <p className="text-2xl font-bold text-blue-600">
-                        ₹{due.toFixed(2)}
-                      </p>
-                    </div>
-
-                    <span className="text-blue-600 text-sm group-hover:underline">
-                      Open →
-                    </span>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900">{b.customer?.name || "Guest"}</p>
+                    <p className="text-xs text-gray-500">{b.customer?.phone || "-"}</p>
                   </div>
                 </div>
-              );
-            })
-          )}
-        </div>
 
-        {/* Footer */}
-        {deliveryOrders.length > 0 && (
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex justify-between text-sm">
+                {/* Delivery Time */}
+                <div className="mt-5 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500">Delivery Time</p>
+                    <p className="font-bold text-blue-700 text-lg mt-1">
+                      {new Date(b.scheduled_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                  <Clock size={28} className="text-blue-400" />
+                </div>
 
-            <div>
-              Total Deliveries:{" "}
-              <span className="font-bold text-gray-900">
-                {deliveryOrders.length}
-              </span>
-            </div>
+                {/* Amounts */}
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-2xl p-3">
+                    <p className="text-xs text-gray-500">Total</p>
+                    <p className="font-bold text-gray-900 mt-1">₹{total.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-2xl p-3">
+                    <p className="text-xs text-green-600">Paid</p>
+                    <p className="font-bold text-green-700 mt-1">₹{paid.toFixed(2)}</p>
+                  </div>
+                </div>
 
-            <div className="text-blue-600 font-medium">
-              Total Due: ₹
-              {deliveryOrders
-                .reduce((sum, b) => {
-                  const total = Number(
-                    b.custom_price ||
-                    b.final_amount ||
-                    b.total_amount ||
-                    0
-                  );
+                {/* Due */}
+                <div className={`mt-3 rounded-2xl p-3 ${isPaid ? "bg-blue-50" : "bg-red-50"}`}>
+                  <p className={`text-xs ${isPaid ? "text-blue-600" : "text-red-600"}`}>Due</p>
+                  <p className={`font-bold mt-1 ${isPaid ? "text-blue-700" : "text-red-700"}`}>
+                    ₹{due.toFixed(2)}
+                  </p>
+                </div>
 
-                  const paid =
-                    Number(b.received_amount || 0) +
-                    Number(b.advance_paid || 0);
+                {/* Action Button */}
+                <div className="mt-6">
+                  {isPaid ? (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setDeliveringOrders(prev => new Set(prev).add(b.order_id));
 
-                  return sum + (total - paid);
-                }, 0)
-                .toFixed(2)}
-            </div>
-          </div>
+                        try {
+                          await axios.patch(`${BILL_API}${b.order_id}/mark_delivered/`);
+                          
+                          // Optimistic Update
+                          setSavedBills(prev => 
+                            prev.map(order => 
+                              order.order_id === b.order_id 
+                                ? { ...order, is_delivered: true } 
+                                : order
+                            )
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          alert("Failed to mark delivered");
+                        } finally {
+                          setDeliveringOrders(prev => {
+                            const ns = new Set(prev);
+                            ns.delete(b.order_id);
+                            return ns;
+                          });
+                        }
+                      }}
+                      disabled={isDelivering}
+                      className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-3 rounded-2xl font-semibold transition-all flex items-center justify-center gap-2"
+                    >
+                      {isDelivering ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Marking Delivered...
+                        </>
+                      ) : (
+                        "Mark Delivered"
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectBill(b);
+                        setCashReceived(due);
+                        setShowPaymentModal(true);
+                        setShowDeliveryModal(false);
+                      }}
+                      className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-2xl font-semibold transition-all"
+                    >
+                      Pay Now
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
-    </Modal>
-  )}
+
+      {/* Footer Summary */}
+      {deliveryOrders.length > 0 && (
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-sm">
+          <div className="flex justify-between">
+            <span>Total Deliveries: <strong>{deliveryOrders.length}</strong></span>
+            <span>Pending: ₹{deliveryOrders.reduce((sum, b) => {
+              const subtotal = Number(b.total_amount || 0);
+              const discount = Number(b.discount_amount || 0);
+              const tax = Number(b.tax_amount || 0);
+              const credit = Number(b.credit_used || 0);
+              let total = Number(b.final_amount || 0) || (subtotal - discount + tax - credit);
+              const paid = Number(b.received_amount || 0) + Number(b.advance_paid || 0);
+              return sum + Math.max(total - paid, 0);
+            }, 0).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  </Modal>
+)}
 </AnimatePresence>
     </div>
   );
