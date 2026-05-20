@@ -170,7 +170,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         } )
     @action(detail=False, methods=['post'], url_path='create_order')
     def create_order(self, request):
-        
+    
         setting = RestaurantSetting.objects.first()
         tax_percentage = setting.tax_percentage if setting else Decimal('5')
         data = request.data
@@ -205,7 +205,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             if total <= 0:
                 return Response({"detail": "Invalid total amount"}, status=400)
 
-            # ───── DISCOUNT (Manual + Auto) ─────
+            # ───── DISCOUNT ─────
             manual_discount = Decimal(str(data.get('discount', 0)))
             discount_type = data.get('discount_type', 'fixed')
 
@@ -217,18 +217,7 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             else:
                 discount = Decimal('0')
 
-                # fallback to auto discount
                 discount_obj = DiscountSetting.objects.filter(is_active=True).first()
-
-                if discount_obj and total >= discount_obj.min_amount:
-                    if discount_obj.discount_type == "percentage":
-                        discount = (total * discount_obj.discount_value) / 100
-                    else:
-                        discount = discount_obj.discount_value
-
-            if discount == 0:
-                discount_obj = DiscountSetting.objects.filter(is_active=True).first()
-
                 if discount_obj and total >= discount_obj.min_amount:
                     if discount_obj.discount_type == "percentage":
                         discount = (total * discount_obj.discount_value) / 100
@@ -243,12 +232,10 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Not enough credits"}, status=400)
 
             # ───── TAX ─────
-            # ───── TAX ─────
             tax_obj = TaxSetting.objects.first()
             tax_percentage = Decimal(str(tax_obj.percentage)) if tax_obj and tax_obj.enabled else Decimal('0')
 
             subtotal_after_discount = total - discount
-
             tax_amount = (subtotal_after_discount * tax_percentage) / Decimal('100')
 
             # ───── FINAL AMOUNT ─────
@@ -272,11 +259,27 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
 
             if payment_mode not in ['cash', 'card', 'upi']:
                 payment_mode = 'cash'
+                
+            # 🔥 FIX: Convert null to empty string for bulk_note
+            bulk_note = data.get('bulk_note')
+            if bulk_note is None:
+                bulk_note = ""
+                
+            # 🔥 FIX: Convert null to empty string for external_order_id
+            external_order_id = data.get('external_order_id')
+            if external_order_id is None:
+                external_order_id = ""
+                
+            # 🔥 FIX: Convert null to empty string for source
+            source = data.get('source')
+            if source is None:
+                source = 'offline'
+
             # ───── CREATE ORDER ─────
             order = Order.objects.create(
                 customer=customer,
                 total_amount=total,
-                discount_amount=discount,           # ← FIXED: Save actual discount
+                discount_amount=discount,
                 credit_used=credit,
                 final_amount=final_amount,
                 tax_amount=tax_amount,
@@ -284,23 +287,29 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 remaining_amount=remaining_amount,
                 payment_mode=payment_mode,
                 is_bulk=data.get('is_bulk', False),
-                bulk_note=data.get('bulk_note', ''),
+                bulk_note=bulk_note,  # 🔥 Now guaranteed to be string, not None
                 is_advance=data.get('is_advance', False),
                 scheduled_time=data.get('scheduled_time'),
-                source=data.get('source', 'offline'),
-                external_order_id=data.get('external_order_id', ''),
+                source=source,  # 🔥 Now guaranteed to be string
+                external_order_id=external_order_id,  # 🔥 Now guaranteed to be string
                 status=status_value
             )
 
             # ───── SAVE ITEMS ─────
             items = []
             for item in cart:
+                # 🔥 Handle variant_info
+                variant_info = item.get('variant_info')
+                if variant_info is None:
+                    variant_info = ""
+                    
                 items.append(OrderItem(
                     order=order,
                     food_id=item.get('food_id'),
                     name=item['name'],
                     quantity=Decimal(str(item['quantity'])),
                     price=Decimal(str(item['price'])),
+                    variant_info=variant_info  # 🔥 Now guaranteed to be string
                 ))
             OrderItem.objects.bulk_create(items)
 
@@ -316,6 +325,16 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
     # ──────────────────────────────
     # 2. MARK AS PAID
     # ──────────────────────────────
+    @action(detail=True, methods=['patch'], url_path='mark_delivered')
+    def mark_delivered(self, request, pk=None):
+        order = self.get_object()
+        order.is_delivered = True
+        order.save()
+
+        return Response({
+            "success": True,
+            "message": "Order delivered successfully"
+        })
     @action(detail=True, methods=['post'], url_path='mark_paid')
     def mark_paid(self, request, pk=None):
         order = self.get_object()
@@ -334,8 +353,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         if due <= 0:
             return Response({"detail": "Order already settled"}, status=400)
 
-        if received < due:
-            return Response({"detail": "Insufficient amount"}, status=400)
+        if received <= 0:
+            return Response({"detail": "Invalid payment amount"}, status=400)
+
         order.payment_mode = payment_mode
         # ✅ Add payment (important)
         order.received_amount += received

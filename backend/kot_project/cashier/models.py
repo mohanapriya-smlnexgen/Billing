@@ -32,7 +32,7 @@ class Order(models.Model):
     order_id = models.AutoField(primary_key=True)
 
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True)
-
+    is_delivered = models.BooleanField(default=False)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credit_used = models.DecimalField(max_digits=10, decimal_places=2, default=0)
