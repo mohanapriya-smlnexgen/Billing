@@ -101,4 +101,4 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone', 'credits', 'order_count']
+        fields = ['id', 'name', 'phone', 'credits', 'order_count', "credit_limit",'available_credit']
