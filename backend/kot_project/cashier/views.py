@@ -11,6 +11,7 @@ from django.db.models import Sum, Q
 from datetime import date
 
 from django.conf import settings
+from urllib3 import request
 from .models import DiscountSetting, Order, OrderItem, Customer
 from .serializers import CustomerSerializer, OrderHistorySerializer, OrderSerializer
 from management.models import AdminUser
@@ -176,7 +177,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         setting = RestaurantSetting.objects.first()
         tax_percentage = setting.tax_percentage if setting else Decimal('5')
         data = request.data
-
+        credit_due_date = data.get('credit_due_date')
+        is_credit_order = data.get('is_credit_order', False)
         try:
             cart = data.get('cart', [])
             if not cart:
@@ -262,34 +264,25 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             # ───── CREDIT LIMIT VALIDATION ─────
             # advance = Decimal(str(data.get('advance_paid', 0)))
 
-            # if customer:
+            if customer and is_credit_order:
 
-            #     pending_due = (
-            #         subtotal_after_discount +
-            #         tax_amount -
-            #         advance -
-            #         credit
-            #     )
+                pending_due = final_amount
 
-            #     if pending_due < 0:
-            #         pending_due = Decimal('0')
+                total_credit_after_order = (
+                    customer.credits + pending_due
+                )
 
-            #     total_credit_after_order = (
-            #         customer.credits + pending_due
-            #     )
+                if total_credit_after_order > customer.credit_limit:
 
-            #     if total_credit_after_order > customer.credit_limit:
+                    available_limit = (
+                        customer.credit_limit - customer.credits
+                    )
 
-            #         available_limit = (
-            #             customer.credit_limit -
-            #             customer.credits
-            #         )
-
-            #         return Response({
-            #             "detail":
-            #             f"Credit limit exceeded. Available limit: ₹{available_limit}"
-            #         }, status=400)
-            # ───── FINAL AMOUNT ─────
+                    return Response({
+                        "detail":
+                        f"Credit limit exceeded. Available limit: ₹{available_limit}"
+                    }, status=400)
+                        # ───── FINAL AMOUNT ─────
             advance = Decimal(str(data.get('advance_paid', 0)))
             custom_price = data.get('custom_price')
 
@@ -305,7 +298,12 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             if remaining_amount < 0:
                 remaining_amount = Decimal('0')
 
-            status_value = 'advance_paid' if advance > 0 else 'pending'
+            if is_credit_order:
+                status_value = 'pending'
+            elif advance > 0:
+                status_value = 'advance_paid'
+            else:
+                status_value = 'pending'
             payment_mode = data.get('payment_mode')
 
             if payment_mode not in ['cash', 'card', 'upi']:
@@ -343,7 +341,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 scheduled_time=data.get('scheduled_time'),
                 source=source,  # 🔥 Now guaranteed to be string
                 external_order_id=external_order_id,  # 🔥 Now guaranteed to be string
-                status=status_value
+                status=status_value,
+                credit_due_date=credit_due_date,
+                is_credit_order=is_credit_order,
             )
 
             # ───── SAVE ITEMS ─────
@@ -397,48 +397,166 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         })
     @action(detail=True, methods=['post'], url_path='mark_paid')
     def mark_paid(self, request, pk=None):
+
         order = self.get_object()
 
-        if order.status == 'paid':
-            return Response({"detail": "Already paid"}, status=400)
-
-        received = Decimal(str(request.data.get('received_amount', 0)))
         payment_mode = request.data.get('payment_mode')
+
+        received = Decimal(
+            str(request.data.get('received_amount', 0))
+        )
+
+        due = Decimal(str(order.remaining_amount or 0))
+
+        # ✅ Already fully paid
+        if order.status == 'paid' and due <= 0:
+            return Response(
+                {"detail": "Already paid"},
+                status=400
+            )
+
+        # ✅ CREDIT ORDER
+        if payment_mode == "credit":
+
+            order.payment_mode = "credit"
+            order.status = "pending"
+
+            order.received_amount = Decimal('0')
+
+            order.credit_due_date = request.data.get(
+                "credit_due_date"
+            )
+
+            order.credit_note = request.data.get(
+                "credit_note",
+                ""
+            )
+
+            order.save()
+
+            return Response({
+                **OrderSerializer(order).data,
+                "message": "Credit order created"
+            })
+
+        # ✅ NORMAL PAYMENT VALIDATION
         if received <= 0:
-            return Response({"detail": "Invalid payment amount"}, status=400)
+            return Response(
+                {"detail": "Invalid payment amount"},
+                status=400
+            )
 
-        # ✅ ALWAYS use remaining_amount (single source of truth)
-        due = order.remaining_amount
+        # ✅ Prevent over payment
+        if received > due:
+            change = received - due
+            actual_received = due
+        else:
+            change = Decimal('0')
+            actual_received = received
 
-        if due <= 0:
-            return Response({"detail": "Order already settled"}, status=400)
-
-        if received <= 0:
-            return Response({"detail": "Invalid payment amount"}, status=400)
-
+        # ✅ Update payment
         order.payment_mode = payment_mode
-        # ✅ Add payment (important)
-        order.received_amount += received
 
-        # ✅ Calculate change
-        change = received - due
+        order.received_amount += actual_received
 
-        # ✅ Close order
-        order.remaining_amount = Decimal('0')
-        order.status = 'paid'
-        order.paid_at = timezone.now()
+        order.remaining_amount -= actual_received
+
+        # ✅ Prevent negative
+        if order.remaining_amount < 0:
+            order.remaining_amount = Decimal('0')
+
+        # ✅ Reduce customer used credit
+        if order.customer:
+
+            order.customer.credits -= actual_received
+
+            if order.customer.credits < 0:
+                order.customer.credits = Decimal('0')
+
+            order.customer.save()
+
+        # ✅ Status update
+        if order.remaining_amount <= 0:
+            order.status = "paid"
+            order.paid_at = timezone.now()
+        else:
+            order.status = "pending"
 
         order.save()
 
-        # ✅ CREDIT RETURN (loyalty)
-        if order.customer and change > 0:
-            order.customer.credits += change
-            order.customer.save()
-
         return Response({
             **OrderSerializer(order).data,
-            "change_returned": float(change)  # 🔥 useful for frontend
+            "change_returned": float(change),
+            "remaining_amount": float(order.remaining_amount)
         })
+    @action(detail=True, methods=['post'], url_path='pay_credit')
+    def pay_credit(self, request, pk=None):
+        order = self.get_object()
+
+        try:
+            amount = Decimal(str(request.data.get('amount', 0)))
+            payment_mode = request.data.get('payment_mode', 'cash')
+
+            if amount <= 0:
+                return Response(
+                    {"detail": "Invalid amount"},
+                    status=400
+                )
+
+            # Only credit orders
+            if order.payment_mode != "credit":
+                return Response(
+                    {"detail": "This is not a credit order"},
+                    status=400
+                )
+
+            due = Decimal(str(order.remaining_amount or 0))
+
+            if due <= 0:
+                return Response(
+                    {"detail": "Order already paid"},
+                    status=400
+                )
+
+            # Prevent extra payment
+            if amount > due:
+                return Response(
+                    {
+                        "detail":
+                        f"Amount exceeds due. Remaining: ₹{due}"
+                    },
+                    status=400
+                )
+
+            # Update payment
+            order.received_amount += amount
+            order.remaining_amount -= amount
+
+            # Fully paid
+            if order.remaining_amount <= 0:
+                order.remaining_amount = Decimal('0')
+                order.status = "paid"
+                order.paid_at = timezone.now()
+            else:
+                order.status = "pending"
+
+            # Save last payment mode
+            order.last_payment_mode = payment_mode
+
+            order.save()
+
+            return Response({
+                "message": "Credit payment updated",
+                "received_amount": float(order.received_amount),
+                "remaining_amount": float(order.remaining_amount),
+                "status": order.status
+            })
+
+        except Exception as e:
+            return Response(
+                {"detail": str(e)},
+                status=400
+            )
     @action(detail=True, methods=['post'], url_path='update_price')
     def update_price(self, request, pk=None):
         from decimal import Decimal

@@ -19,6 +19,7 @@ class Customer(models.Model):
         decimal_places=2,
         default=0
     )
+    
     updated_at = models.DateTimeField(auto_now=True)  # NEW
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)  # NEW
 
@@ -55,7 +56,8 @@ class Order(models.Model):
     received_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-
+    credit_due_date = models.DateField(null=True, blank=True)
+    is_credit_order = models.BooleanField(default=False)
     # Bulk & advance
     is_bulk = models.BooleanField(default=False)
     bulk_note = models.TextField(blank=True)
