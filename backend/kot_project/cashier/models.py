@@ -9,7 +9,16 @@ class Customer(models.Model):
     phone = models.CharField(max_length=15, unique=True)
     email = models.EmailField(blank=True, null=True)
     credits = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-
+    credit_limit = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
+    available_credit = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
     updated_at = models.DateTimeField(auto_now=True)  # NEW
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)  # NEW
 

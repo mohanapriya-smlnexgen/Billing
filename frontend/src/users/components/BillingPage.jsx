@@ -1,48 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Search,
-  Plus,
-  Minus,
-  Receipt,
-  PauseCircle,
-  Printer,
-  ShoppingCart,
-  CheckCircle,
-  X,
-  Truck,
-  LogOut,
-  ClipboardList,
-  User,
-  ChevronDown,
-  ChevronUp,
-  CreditCard,
-  Tag,
-  Clock,
-  Store,
-  Phone,
-  Calendar,
-  FileText,
-  AlertCircle,
-  Bell,
-  ShoppingBag,
-  ChevronRight,   // ✅ ADD THIS
-  Filter,
-  AppWindowMacIcon,
-  PersonStanding,
-  PersonStandingIcon, Mail
-
+import { Search, Plus,Minus,Receipt,PauseCircle,Printer,ShoppingCart,CheckCircle,X,Truck,LogOut,ClipboardList,User,ChevronDown,ChevronUp,CreditCard,Tag,Clock,Store,Phone,Calendar,FileText,AlertCircle,Bell,ShoppingBag,ChevronRight,AppWindowMacIcon,PersonStanding,PersonStandingIcon, Mail
 } from "lucide-react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { BillingRightPanel } from "./BillingRightPanel";
-
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const REPORT_API = `${BASE_URL}/report-setting/`;
 const MENU_API = `${BASE_URL}/food-menu/`;
 const BILL_API = `${BASE_URL}/cashier-orders/`;
 const SETTING_API = `${BASE_URL}/setting/`;
-
 const Modal = ({ children, title, onClose }) => (
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-1">
     <motion.div
@@ -78,7 +45,6 @@ const Modal = ({ children, title, onClose }) => (
     </motion.div>
   </div>
 );
-
 export default function BillingPage() {
   const [search, setSearch] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
@@ -107,10 +73,10 @@ const [tempGstin, setTempGstin] = useState("");
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [customerName, setCustomerName] = useState("");
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
-const [deliverySearch, setDeliverySearch] = useState("");
-const [deliveringOrders, setDeliveringOrders] = useState(new Set());
-const [restaurantPhone, setRestaurantPhone] = useState("");
-const [restaurantGstin, setRestaurantGstin] = useState("");
+  const [deliverySearch, setDeliverySearch] = useState("");
+  const [deliveringOrders, setDeliveringOrders] = useState(new Set());
+  const [restaurantPhone, setRestaurantPhone] = useState("");
+  const [restaurantGstin, setRestaurantGstin] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [discount, setDiscount] = useState(0);
   const [credit, setCredit] = useState(0);
@@ -134,19 +100,16 @@ const [restaurantGstin, setRestaurantGstin] = useState("");
   const [restaurantName, setRestaurantName] = useState(
     localStorage.getItem("restaurant_name") || "My Restaurant"
   );
-const [taxConfig, setTaxConfig] = useState({
+  const [taxConfig, setTaxConfig] = useState({
   enabled: false,
   percentage: 0
 });
   const [currentTime, setCurrentTime] = useState(new Date());
-const [isEditOpen, setIsEditOpen] = useState(false);
-const [tempName, setTempName] = useState("");
-const [tempAddress, setTempAddress] = useState("");
-  // Search and Filter states for notification modal
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [tempName, setTempName] = useState("");
+  const [tempAddress, setTempAddress] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState("");
-
-  // Store read notification IDs in localStorage
   const [readNotifications, setReadNotifications] = useState(() => {
     const saved = localStorage.getItem("read_notifications");
     return saved ? JSON.parse(saved) : [];
@@ -165,15 +128,13 @@ const [tempAddress, setTempAddress] = useState("");
     fetchReportEmail();
     fetchRestaurantSettings();
   }, []);
-
-  // Save read notifications to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem("read_notifications", JSON.stringify(readNotifications));
   }, [readNotifications]);
 const openEditModal = () => {
   setTempName(restaurantName);
   setTempAddress(address || "");
-  setTempPhone("");   // or existing value if API has it
+  setTempPhone(""); 
   setTempGstin(""); 
   setIsEditOpen(true);
 };
@@ -181,9 +142,8 @@ useEffect(() => {
   const fetchSettings = async () => {
     try {
       const res = await axios.get(SETTING_API);
-
       setRestaurantName(res.data.restaurant_name);
-      setAddress(res.data.address || ""); // ✅ ADD THIS
+      setAddress(res.data.address || ""); 
       setTempPhone(res.data.phone_number || "");
       setTempGstin(res.data.gstin || "");
       setRestaurantPhone(res.data.phone_number);
@@ -2244,8 +2204,6 @@ taxPercentage={taxConfig.percentage}
             </span>
           </div>
         </div>
-
-        {/* Confirm Button */}
         <button
   onClick={handleSplitPaymentConfirm}
   disabled={isPaying || getTotalSplitAmount() < dueAmount - 0.01 || getTotalSplitAmount() === 0}
@@ -2283,8 +2241,6 @@ taxPercentage={taxConfig.percentage}
           onChange={(e) => setDeliverySearch(e.target.value)}
         />
       </div>
-
-      {/* Delivery Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 max-h-[65vh] overflow-y-auto pr-1">
         {deliveryOrders.length === 0 ? (
           <div className="col-span-3 text-center py-20 text-gray-400">

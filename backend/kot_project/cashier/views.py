@@ -86,7 +86,9 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 "id": customer.id,
                 "name": customer.name,
                 "phone": customer.phone,
-                "credits": float(customer.credits)
+                "credits": float(customer.credits),
+                "credit_limit": float(customer.credit_limit),
+                "available_credit": float(customer.credit_limit - customer.credits)
             })
         except Customer.DoesNotExist:
             return Response({
@@ -225,19 +227,68 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                         discount = discount_obj.discount_value
 
             # ───── CREDIT ─────
+            # ───── CREDIT ─────
+            # ───── CREDIT ─────
             credit = Decimal(str(data.get('credit', 0)))
+
             if credit < 0:
-                return Response({"detail": "Invalid credit"}, status=400)
+                return Response(
+                    {"detail": "Invalid credit"},
+                    status=400
+                )
+
+            # Existing usable credit check
             if customer and credit > customer.credits:
-                return Response({"detail": "Not enough credits"}, status=400)
+                return Response(
+                    {"detail": "Not enough credits"},
+                    status=400
+                )
 
             # ───── TAX ─────
             tax_obj = TaxSetting.objects.first()
-            tax_percentage = Decimal(str(tax_obj.percentage)) if tax_obj and tax_obj.enabled else Decimal('0')
+
+            tax_percentage = (
+                Decimal(str(tax_obj.percentage))
+                if tax_obj and tax_obj.enabled
+                else Decimal('0')
+            )
 
             subtotal_after_discount = total - discount
-            tax_amount = (subtotal_after_discount * tax_percentage) / Decimal('100')
 
+            tax_amount = (
+                subtotal_after_discount * tax_percentage
+            ) / Decimal('100')
+
+            # ───── CREDIT LIMIT VALIDATION ─────
+            # advance = Decimal(str(data.get('advance_paid', 0)))
+
+            # if customer:
+
+            #     pending_due = (
+            #         subtotal_after_discount +
+            #         tax_amount -
+            #         advance -
+            #         credit
+            #     )
+
+            #     if pending_due < 0:
+            #         pending_due = Decimal('0')
+
+            #     total_credit_after_order = (
+            #         customer.credits + pending_due
+            #     )
+
+            #     if total_credit_after_order > customer.credit_limit:
+
+            #         available_limit = (
+            #             customer.credit_limit -
+            #             customer.credits
+            #         )
+
+            #         return Response({
+            #             "detail":
+            #             f"Credit limit exceeded. Available limit: ₹{available_limit}"
+            #         }, status=400)
             # ───── FINAL AMOUNT ─────
             advance = Decimal(str(data.get('advance_paid', 0)))
             custom_price = data.get('custom_price')
@@ -314,8 +365,17 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
             OrderItem.objects.bulk_create(items)
 
             # ───── DEDUCT CREDIT ─────
-            if customer and credit > 0:
-                customer.credits -= credit
+            # ───── UPDATE CUSTOMER CREDIT ─────
+            if customer:
+
+                # Deduct used wallet credit
+                if credit > 0:
+                    customer.credits -= credit
+
+                # Add remaining due to customer credit
+                if remaining_amount > 0:
+                    customer.credits += remaining_amount
+
                 customer.save()
 
             return Response(OrderSerializer(order).data)
@@ -547,7 +607,29 @@ class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all().order_by('-id')
     serializer_class = CustomerSerializer
 
-    # Add this action to handle /api/customers/{id}/orders/
+    @action(detail=True, methods=['patch'], url_path='set_credit_limit')
+    def set_credit_limit(self, request, pk=None):
+        customer = self.get_object()
+
+        try:
+            limit = Decimal(str(request.data.get('credit_limit', 0)))
+
+            if limit < 0:
+                return Response(
+                    {"detail": "Invalid credit limit"},
+                    status=400
+                )
+
+            customer.credit_limit = limit
+            customer.save()
+
+            return Response({
+                "message": "Credit limit updated",
+                "credit_limit": float(customer.credit_limit)
+            })
+
+        except Exception as e:
+            return Response({"detail": str(e)}, status=400)
     @action(detail=True, methods=['get'])
     def orders(self, request, pk=None):
         customer = self.get_object()
