@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Search, Plus,Minus,Receipt,PauseCircle,Printer,ShoppingCart,CheckCircle,X,Truck,LogOut,ClipboardList,User,ChevronDown,ChevronUp,CreditCard,Tag,Clock,Store,Phone,Calendar,FileText,AlertCircle,Bell,ShoppingBag,ChevronRight,AppWindowMacIcon,PersonStanding,PersonStandingIcon, Mail
 } from "lucide-react";
+
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
@@ -95,6 +96,10 @@ const [tempGstin, setTempGstin] = useState("");
   const [discountType, setDiscountType] = useState("fixed");
   const [isViewingBill, setIsViewingBill] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+const [creditDueDate, setCreditDueDate] = useState("");
+const [creditNote, setCreditNote] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [address, setAddress] = useState(""); // ✅ ADD THIS
   const [restaurantName, setRestaurantName] = useState(
@@ -367,32 +372,39 @@ const filteredOrders = useMemo(() => {
     }
   };
 
-  const searchCustomer = async (phone) => {
-    if (!phone || phone.length !== 10) return;
+const searchCustomer = async (phone) => {
+  if (!phone || phone.length !== 10) return;
 
-    try {
-      console.log("Searching:", phone);
+  try {
+    console.log("Searching:", phone);
 
-      const res = await axios.get(
-        `${BASE_URL}/cashier-orders/search_customer/?phone=${phone}`
-      );
+    const res = await axios.get(
+      `${BASE_URL}/cashier-orders/search_customer/?phone=${phone}`
+    );
 
-      console.log("✅ API RESPONSE:", res);        // full response
-      console.log("✅ DATA:", res.data);           // actual data
+    console.log("✅ API RESPONSE:", res.data);
 
-      setCustomerName(res.data?.name || "");
-      setCustomerCredits(res.data?.credits || 0);
-      setCustomerId(res.data?.id || null);
-      setCustomerFound(true);
+    // ✅ STORE FULL CUSTOMER OBJECT
+    setSelectedCustomer(res.data);
 
-    } catch (err) {
-      console.error("❌ API ERROR:", err.response || err);
+    // Optional separate states
+    setCustomerName(res.data?.name || "");
+    setCustomerCredits(res.data?.credits || 0);
+    setCustomerId(res.data?.id || null);
 
-      setCustomerFound(false);
-      setCustomerCredits(0);
-      setCustomerName("");
-    }
-  };
+    setCustomerFound(true);
+
+  } catch (err) {
+    console.error("❌ API ERROR:", err.response || err);
+
+    setSelectedCustomer(null);
+
+    setCustomerFound(false);
+    setCustomerCredits(0);
+    setCustomerName("");
+    setCustomerId(null);
+  }
+};
 
 const handleSaveSettings = async () => {
   try {
@@ -538,6 +550,7 @@ const normalizeText = (text = "") => {
     .normalize("NFKD")
     .replace(/[^\w\s]/g, "");
 };
+
 const filteredItems = useMemo(() => {
   return menuItems.filter((item) => {
     const matchCategory =
@@ -666,7 +679,7 @@ const handleGenerateBill = async (autoPayment = false) => {
   try {
     let formattedScheduledTime = null;
 
-    if (orderType === "preorder" || orderType === "bulk" && scheduledTime) {
+    if ((orderType === "preorder" || orderType === "bulk") && scheduledTime) {
       const date = new Date(scheduledTime);
       formattedScheduledTime = date.toISOString().slice(0, 19).replace("T", " ");
     }
@@ -897,6 +910,74 @@ ${advance > 0 ? `
   printWindow.print();
 };
 
+const handleCreditPayment = async () => {
+  if (!selectedBill) return;
+
+  try {
+    setIsPaying(true);
+
+    await axios.post(
+      `${BILL_API}${selectedBill.order_id}/mark_paid/`,
+      {
+        received_amount: 0,
+        payment_mode: "credit",
+      }
+    );
+
+    // update local selected bill
+    const updatedBill = {
+      ...selectedBill,
+      payment_mode: "credit",
+      status: "paid",
+    };
+
+    // close modal
+    setShowCreditModal(false);
+    setShowPaymentModal(false);
+
+    // clear cart
+    setCart([]);
+
+    // clear customer details
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerFound(false);
+    setCustomerCredits(0);
+    setCustomerId(null);
+
+    // reset states
+    setDiscount(0);
+    setCredit(0);
+    setAdvanceAmount(0);
+    setCustomPrice(0);
+    setBulkNote("");
+    setScheduledTime("");
+    setOrderType("normal");
+    setPaymentMode("cash");
+    setCashReceived(0);
+
+    // refresh orders
+    fetchBills();
+
+    // print bill
+    setTimeout(() => {
+      printBill(updatedBill);
+    }, 300);
+
+    alert("Credit payment successful");
+
+  } catch (err) {
+    console.error("Credit payment error:", err);
+
+    alert(
+      err.response?.data?.detail ||
+      "Credit payment failed"
+    );
+
+  } finally {
+    setIsPaying(false);
+  }
+};
 const handleSelectBill = (bill) => {
   setIsViewingBill(true);
   setSelectedBill(bill);
@@ -1393,6 +1474,7 @@ const printKOT = () => {
   </html>
   `);
 };
+
 const pendingPreOrders = useMemo(() => {
   return savedBills.filter((o) => {
     const total = Number(
@@ -2147,6 +2229,12 @@ taxPercentage={taxConfig.percentage}
             >
               <Plus size={16} /> Add Method
             </button>
+            <button
+  onClick={() => setShowCreditModal(true)}
+  className=" py-1 rounded-2x font-semibold"
+>
+  Pay on Credit
+</button>
           </div>
 
           {splitPayments.map((payment, index) => (
@@ -2216,6 +2304,153 @@ taxPercentage={taxConfig.percentage}
           Total must be equal to or greater than due amount
         </p>
       </div>
+    </div>
+  )}
+</AnimatePresence>
+<AnimatePresence>
+  {showCreditModal && (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+
+      {/*
+        CALCULATED CREDIT
+      */}
+      {(() => {
+        const availableCredit =
+          Number(selectedCustomer?.credit_limit || 0) -
+          Number(selectedCustomer?.credits || 0);
+
+        return (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+          >
+
+            {/* HEADER */}
+            <div className="bg-orange-500 px-6 py-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Pay on Credit
+                </h2>
+
+                <p className="text-orange-100 text-sm mt-1">
+                  Generate bill using customer credit
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowCreditModal(false)}
+                className="text-white hover:bg-white/20 rounded-full p-2 transition"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* BODY */}
+            <div className="p-6 space-y-5">
+
+              {/* CUSTOMER DETAILS */}
+              <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border">
+
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500">
+                    Customer
+                  </span>
+
+                  <span className="font-semibold text-gray-900">
+                    {selectedCustomer?.name || customerName || "Guest"}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500">
+                    Phone
+                  </span>
+
+                  <span className="font-medium text-gray-800">
+                    {selectedCustomer?.phone || customerPhone || "-"}
+                  </span>
+                </div>
+
+                <div className="border-t pt-3 flex justify-between items-center">
+                  <span className="text-gray-500">
+                    Credit Limit
+                  </span>
+
+                  <span className="font-bold text-blue-600">
+                    ₹{Number(
+                      selectedCustomer?.credit_limit || 0
+                    ).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500">
+                    Used Credit
+                  </span>
+
+                  <span className="font-bold text-red-500">
+                    ₹{Number(
+                      selectedCustomer?.credits || 0
+                    ).toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center bg-green-50 rounded-xl px-4 py-3">
+                  <span className="font-semibold text-green-700">
+                    Available Credit
+                  </span>
+
+                  <span className="text-xl font-black text-green-700">
+                    ₹{availableCredit.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* BILL AMOUNT */}
+              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 text-center">
+                <p className="text-sm text-orange-700 mb-1">
+                  Bill Amount
+                </p>
+
+                <h1 className="text-4xl font-black text-orange-600">
+                  ₹{Number(dueAmount || 0).toFixed(2)}
+                </h1>
+              </div>
+
+              {/* WARNING */}
+              {availableCredit < Number(dueAmount || 0) && (
+                <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-4 py-3 text-sm font-medium">
+                  Insufficient available credit
+                </div>
+              )}
+
+              {/* BUTTONS */}
+              <div className="flex gap-3 pt-2">
+
+                <button
+                  onClick={() => setShowCreditModal(false)}
+                  className="flex-1 py-4 rounded-2xl border border-gray-300 font-semibold hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  disabled={
+                    availableCredit < Number(dueAmount || 0)
+                  }
+                  onClick={handleCreditPayment}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold transition"
+                >
+                  Use Credit & Print Bill
+                </button>
+
+              </div>
+            </div>
+          </motion.div>
+        );
+      })()}
     </div>
   )}
 </AnimatePresence>

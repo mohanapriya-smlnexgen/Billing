@@ -10,6 +10,7 @@ import TimingManager from "../pages/Timingmanage";
 import OrderHistory from './OrderHistory';
 import CustomersPage from '../../users/components/CustomersPage';
 import PreOrderHistory from "../../users/components/PreOrderHistory"
+import CreditManagement from "./CreditManagementPage";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -106,6 +107,8 @@ const Dashboard = () => {
         return <CustomersPage />;
       case "preorders":
          return <PreOrderHistory />;
+      case "credit-management":
+        return <CreditManagement />;
       case "edit-food":
         return <EditFoodForm foodId={editingFoodId} onBack={handleBackToFoodList} />;
       default:
@@ -216,6 +219,30 @@ const Dashboard = () => {
               </svg>
               Order History
             </button>
+            <button
+  onClick={() => handleSectionChange("credit-management")}
+  className={`w-full flex items-center px-4 py-3 text-left font-medium rounded-lg transition ${
+    activeSection === "credit-management"
+      ? "text-indigo-600 bg-indigo-50 border-r-4 border-indigo-600"
+      : "text-gray-700 hover:bg-gray-50"
+  }`}
+>
+  <svg
+    className="w-5 h-5 mr-3"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zm0-6v2m0 16v2m8-10h2M2 12H4m12.95 6.95l1.414 1.414M4.636 4.636L6.05 6.05m0 11.9-1.414 1.414m12.728-12.728 1.414-1.414"
+    />
+  </svg>
+
+  Credit Management
+</button>
             <button
   onClick={() => handleSectionChange("customers")}
   className={`w-full flex items-center px-4 py-3 text-left font-medium rounded-lg transition ${
