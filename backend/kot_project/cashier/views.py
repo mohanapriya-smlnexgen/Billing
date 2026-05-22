@@ -487,6 +487,8 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         return Response({
             **OrderSerializer(order).data,
             "change_returned": float(change),
+            "paid_amount": float(actual_received),
+            "customer_given": float(received),
             "remaining_amount": float(order.remaining_amount)
         })
     @action(detail=True, methods=['post'], url_path='pay_credit')
