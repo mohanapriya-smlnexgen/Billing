@@ -1406,22 +1406,13 @@ const printBill = (billData, actualPaidAmount = null) => {
     <div class="line"></div>
 
     <div class="row balance-row" style="font-weight:bold; font-size: 13px;">
-      <span>${isChangeDue ? "CHANGE AMOUNT" : "BALANCE AMOUNT"}</span>
+      <span>${isChangeDue ? "BALANCE AMOUNT" : "BALANCE AMOUNT"}</span>
       <span class="${isChangeDue ? 'change-amount' : 'due-amount'}">
         ₹${absoluteBalance.toFixed(2)}
       </span>
     </div>
     
-    ${!isChangeDue && balance > 0 ? `
-    <div class="row" style="margin-top: 3px;">
-      <span style="color: #e53e3e; font-size: 10px;">(Amount Due)</span>
-    </div>` : isChangeDue ? `
-    <div class="row" style="margin-top: 3px;">
-      <span style="color: #38a169; font-size: 10px;">(Balance)</span>
-    </div>` : `
-    <div class="row" style="margin-top: 3px;">
-      <span style="color: #38a169; font-size: 10px;">(Fully Paid)</span>
-    </div>`}
+   
 
     <div class="line"></div>
 
