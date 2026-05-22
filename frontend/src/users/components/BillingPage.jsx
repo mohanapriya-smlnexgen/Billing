@@ -38,7 +38,7 @@ const Modal = ({ children, title, onClose }) => (
           <X size={24} className="text-gray-500" />
         </button>
       </div>
-
+    
       {/* Content */}
       <div className="p-2 max-h-[70vh] overflow-y-auto">
         {children}
@@ -109,11 +109,13 @@ const [creditNote, setCreditNote] = useState("");
   enabled: false,
   percentage: 0
 });
+const [dueNotifications, setDueNotifications] = React.useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [tempName, setTempName] = useState("");
   const [tempAddress, setTempAddress] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [showCreditDueModal, setShowCreditDueModal] = useState(false);
   const [dateFilter, setDateFilter] = useState("");
   const [readNotifications, setReadNotifications] = useState(() => {
     const saved = localStorage.getItem("read_notifications");
@@ -136,6 +138,64 @@ const [creditNote, setCreditNote] = useState("");
   useEffect(() => {
     localStorage.setItem("read_notifications", JSON.stringify(readNotifications));
   }, [readNotifications]);
+  useEffect(() => {
+  checkDueNotifications();
+}, [cart, selectedBill]);
+useEffect(() => {
+  checkDueNotifications();
+
+  const interval = setInterval(() => {
+    checkDueNotifications();
+  }, 60000);
+
+  return () => clearInterval(interval);
+}, []);
+const checkDueNotifications = async () => {
+  try {
+    const res = await axios.get(BILL_API);
+    const orders = Array.isArray(res.data) ? res.data : res.data.results || [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const dueAlerts = orders
+      .filter((order) => {
+        // FIXED: Check both is_credit_order AND payment_mode === "credit"
+        const isCreditOrder = order.is_credit_order === true || 
+                             order.payment_mode === "credit";
+
+        if (!isCreditOrder || order.status === "paid") return false;
+        if (!order.credit_due_date) return false;
+
+        // Normalize due date (handle both date string and datetime)
+        let dueDateStr = order.credit_due_date;
+        if (typeof dueDateStr === "string") {
+          dueDateStr = dueDateStr.split("T")[0]; // Remove time part
+        }
+
+        const dueDate = new Date(dueDateStr);
+        dueDate.setHours(0, 0, 0, 0);
+
+        const isOverdue = today >= dueDate;
+        const hasBalance = Number(order.remaining_amount || 0) > 0;
+
+        return isOverdue && hasBalance;
+      })
+      .map((order) => ({
+        order_id: order.order_id,
+        customer: order.customer?.name || "Unknown",
+        phone: order.customer?.phone,
+        amount: Number(order.remaining_amount || 0),
+        due_date: order.credit_due_date,
+      }))
+      .sort((a, b) => new Date(b.due_date) - new Date(a.due_date));
+
+    console.log("Credit Due Alerts Found:", dueAlerts.length); // For debugging
+    setDueNotifications(dueAlerts);
+  } catch (err) {
+    console.error("Due check failed", err);
+  }
+};
 const openEditModal = () => {
   setTempName(restaurantName);
   setTempAddress(address || "");
@@ -912,6 +972,10 @@ ${advance > 0 ? `
 
 const handleCreditPayment = async () => {
   if (!selectedBill) return;
+  if (!creditDueDate) {
+    alert("Please select a due date for this credit");
+    return;
+  }
 
   try {
     setIsPaying(true);
@@ -921,31 +985,29 @@ const handleCreditPayment = async () => {
       {
         received_amount: 0,
         payment_mode: "credit",
+        credit_due_date: creditDueDate,   // ← Added
+        credit_note: creditNote || "",    // ← Optional
       }
     );
 
-    // update local selected bill
+    // Update local state
     const updatedBill = {
       ...selectedBill,
       payment_mode: "credit",
-      status: "paid",
+      status: "pending",
+      credit_due_date: creditDueDate,
     };
 
-    // close modal
     setShowCreditModal(false);
     setShowPaymentModal(false);
 
-    // clear cart
+    // Clear form
     setCart([]);
-
-    // clear customer details
     setCustomerName("");
     setCustomerPhone("");
     setCustomerFound(false);
     setCustomerCredits(0);
     setCustomerId(null);
-
-    // reset states
     setDiscount(0);
     setCredit(0);
     setAdvanceAmount(0);
@@ -955,25 +1017,20 @@ const handleCreditPayment = async () => {
     setOrderType("normal");
     setPaymentMode("cash");
     setCashReceived(0);
+    setCreditDueDate("");   // Reset
+    setCreditNote("");
 
-    // refresh orders
     fetchBills();
 
-    // print bill
     setTimeout(() => {
       printBill(updatedBill);
     }, 300);
 
-    alert("Credit payment successful");
+    alert("Credit payment recorded successfully with due date");
 
   } catch (err) {
     console.error("Credit payment error:", err);
-
-    alert(
-      err.response?.data?.detail ||
-      "Credit payment failed"
-    );
-
+    alert(err.response?.data?.detail || "Credit payment failed");
   } finally {
     setIsPaying(false);
   }
@@ -1061,6 +1118,7 @@ const handleSplitPaymentConfirm = async () => {
         final_amount: Number(dueAmount) + Number(selectedBill?.advance_paid || 0)
       }
     );
+    
     const isSinglePayment = splitPayments.length === 1;
     const finalPaymentMode = isSinglePayment 
       ? splitPayments[0].mode 
@@ -1070,17 +1128,21 @@ const handleSplitPaymentConfirm = async () => {
       received_amount: totalPaid,
       payment_mode: finalPaymentMode,
     };
+    
     if (!isSinglePayment && splitPayments.length > 1) {
       payload.split_payments = splitPayments.map(p => ({
         mode: p.mode,
         amount: Number(p.amount)
       }));
     }
+    
     const paymentRes = await axios.post(
       `${BILL_API}${selectedBill.order_id}/mark_paid/`,
       payload
     );
+    
     const paidBill = paymentRes.data;
+    
     setShowPaymentModal(false);
     resetSplitPayments();
     setCart([]);
@@ -1098,7 +1160,10 @@ const handleSplitPaymentConfirm = async () => {
     setOrderType("normal");
     setPaymentMode("cash");
     setCashReceived(0);
-    setTimeout(() => printBill(paidBill), 300);
+    
+    // 🔥 FIX: Pass the total paid amount to print function
+    setTimeout(() => printBill(paidBill, totalPaid), 300);
+    
     fetchBills();
   } catch (error) {
     console.error("Payment error:", error);
@@ -1138,185 +1203,235 @@ const silentPrint = (htmlContent) => {
     }, 1000);
   };
 };
-const printBill = (billData) => {
+const printBill = (billData, actualPaidAmount = null) => {
   const bill = billData || selectedBill;
-if (!bill) return;
-const safe = (v) => Number(v) || 0;
-const items = cart.length > 0 ? cart : bill.items || [];
+  if (!bill) return;
+  
+  const safe = (v) => Number(v) || 0;
+  const items = cart.length > 0 ? cart : bill.items || [];
 
-const subtotal = items.reduce(
-  (sum, item) => sum + safe(item.price) * safe(item.quantity),
-  0
-);
+  const subtotal = items.reduce(
+    (sum, item) => sum + safe(item.price) * safe(item.quantity),
+    0
+  );
 
-const discount =
-  bill.discount_type === "percentage" ||
-  (safe(bill.discount) > 0 && !bill.discount_amount)
-    ? (subtotal * safe(bill.discount)) / 100
-    : safe(bill.discount_amount);
+  // Calculate discount properly
+  let discount = 0;
+  if (bill.discount_type === "percentage" || (safe(bill.discount) > 0 && !bill.discount_amount)) {
+    discount = (subtotal * safe(bill.discount)) / 100;
+  } else {
+    discount = safe(bill.discount_amount);
+  }
 
-const subtotalAfterDiscount = subtotal - discount;
+  const subtotalAfterDiscount = subtotal - discount;
+  
+  // Calculate tax
+  const tax = taxConfig?.enabled
+    ? (subtotalAfterDiscount * safe(taxConfig?.percentage)) / 100
+    : 0;
 
-const tax = taxConfig?.enabled
-  ? (subtotalAfterDiscount * safe(taxConfig?.percentage)) / 100
-  : 0;
+  const advance = safe(bill.advance_paid);
+  
+  // 🔥 USE THE ACTUAL PAID AMOUNT IF PROVIDED, OTHERWISE USE BILL DATA
+  const received = actualPaidAmount !== null ? actualPaidAmount : safe(bill.received_amount);
 
-const advance = safe(bill.advance_paid);
-const received = safe(bill.received_amount);
+  const total = subtotalAfterDiscount + tax;
+  const paid = advance + received;
+  const balance = total - paid;
+  
+  // Determine if change is needed
+  const isChangeDue = balance < 0;
+  const absoluteBalance = Math.abs(balance);
 
-const total = subtotalAfterDiscount + tax;
-const paid = advance + received;
-const balance = total - paid;
-silentPrint(`
-  <html>
-  <head>
-    <style>
-      @page { size: 60mm auto; margin: 0; }
+  silentPrint(`
+    <html>
+    <head>
+      <style>
+        @page { size: 60mm auto; margin: 0; }
 
-      body {
-        width: 50mm;
-        margin: 0 auto;
-        padding: 5px;
-        font-family: monospace;
-        font-size: 11px;
-      }
+        body {
+          width: 50mm;
+          margin: 0 auto;
+          padding: 5px;
+          font-family: monospace;
+          font-size: 11px;
+        }
 
-      .center { text-align: center; }
+        .center { text-align: center; }
 
-      .row {
-        display: flex;
-        justify-content: space-between;
-      }
+        .row {
+          display: flex;
+          justify-content: space-between;
+        }
 
-      .line {
-        border-top: 1px dashed #000;
-        margin: 5px 0;
-      }
+        .line {
+          border-top: 1px dashed #000;
+          margin: 5px 0;
+        }
 
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
 
-      th, td {
-        font-size: 11px;
-        padding: 2px 0;
-      }
+        th, td {
+          font-size: 11px;
+          padding: 2px 0;
+        }
 
-      th {
-        border-bottom: 1px solid #000;
-      }
+        th {
+          border-bottom: 1px solid #000;
+        }
 
-      .item { width: 35%; }
-      .qty { width: 10%; text-align: center; }
-      .amt { width: 35%; text-align: right; }
-    </style>
-  </head>
+        .item { width: 35%; }
+        .qty { width: 10%; text-align: center; }
+        .amt { width: 35%; text-align: right; }
+        
+        .balance-row {
+          font-weight: bold;
+          border-top: 1px dashed #000;
+          margin-top: 5px;
+          padding-top: 5px;
+        }
+        
+        .paid-amount {
+          background-color: #e6f7e6;
+          padding: 4px 8px;
+          border-radius: 4px;
+          margin: 5px 0;
+        }
+        
+        .change-amount {
+          color: #38a169;
+          font-weight: bold;
+        }
+        
+        .due-amount {
+          color: #e53e3e;
+          font-weight: bold;
+        }
+      </style>
+    </head>
 
-  <body>
+    <body>
 
-  <div class="center">
-    <b>${restaurantName || ""}</b><br/>
-    ${address || ""}<br/>
-    Mob: ${restaurantPhone || ""}<br/>
-    GSTIN: ${restaurantGstin || ""}
-  </div>
+    <div class="center">
+      <b>${restaurantName || ""}</b><br/>
+      ${address || ""}<br/>
+      Mob: ${restaurantPhone || ""}<br/>
+      GSTIN: ${restaurantGstin || ""}
+    </div>
 
-  <div class="line"></div>
+    <div class="line"></div>
 
-  <div class="row">
-    <span>${new Date().toLocaleDateString()}</span>
-    <span>${new Date().toLocaleTimeString()}</span>
-  </div>
+    <div class="row">
+      <span>${new Date().toLocaleDateString()}</span>
+      <span>${new Date().toLocaleTimeString()}</span>
+    </div>
 
-  <div class="row">
-    <span>Bill No: ${bill.order_id}</span>
-    <span>${bill.order_type || "Normal"}</span>
-  </div>
+    <div class="row">
+      <span>Bill No: ${bill.order_id}</span>
+      <span>${bill.order_type || "Normal"}</span>
+    </div>
 
-  <div class="row">
-    <span>Customer:</span>
-    <span>${bill.customer?.name || "Guest"}</span>
-  </div>
+    <div class="row">
+      <span>Customer:</span>
+      <span>${bill.customer?.name || "Guest"}</span>
+    </div>
 
-  <div class="row">
-    <span>Mobile:</span>
-    <span>${bill.customer?.phone || "-"}</span>
-  </div>
+    <div class="row">
+      <span>Mobile:</span>
+      <span>${bill.customer?.phone || "-"}</span>
+    </div>
 
-  <div class="line"></div>
+    <div class="line"></div>
 
-  <table>
-    <thead>
-      <tr>
-        <th class="item">Item</th>
-        <th class="qty">Qty</th>
-        <th class="amt">Amt</th>
-      </tr>
-    </thead>
-
-    <tbody>
-      ${items.map(i => `
+    <table>
+      <thead>
         <tr>
-          <td>${i.name}</td>
-          <td class="qty">${i.quantity}</td>
-          <td class="amt">${(i.price * i.quantity).toFixed(2)}</td>
+          <th class="item">Item</th>
+          <th class="qty">Qty</th>
+          <th class="amt">Amt</th>
         </tr>
-      `).join("")}
-    </tbody>
-  </table>
+      </thead>
 
-  <div class="line"></div>
+      <tbody>
+        ${items.map(i => `
+          <tr>
+            <td class="item">${i.name}</td>
+            <td class="qty">${i.quantity}</td>
+            <td class="amt">${(i.price * i.quantity).toFixed(2)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
 
-  <div class="row">
-    <span>Sub Total</span>
-    <span>₹${subtotal.toFixed(2)}</span>
-  </div>
+    <div class="line"></div>
 
-  ${discount > 0 ? `
-  <div class="row">
-    <span>Discount</span>
-    <span>-₹${discount.toFixed(2)}</span>
-  </div>` : ""}
+    <div class="row">
+      <span>Sub Total</span>
+      <span>₹${subtotal.toFixed(2)}</span>
+    </div>
 
-  ${taxConfig.enabled ? `
-  <div class="row">
-    <span>Tax (${taxConfig.percentage}%)</span>
-    <span>₹${tax.toFixed(2)}</span>
-  </div>` : ""}
+    ${discount > 0 ? `
+    <div class="row">
+      <span>Discount</span>
+      <span>-₹${discount.toFixed(2)}</span>
+    </div>` : ""}
 
-  <div class="line"></div>
+    ${taxConfig.enabled ? `
+    <div class="row">
+      <span>Tax (${taxConfig.percentage}%)</span>
+      <span>₹${tax.toFixed(2)}</span>
+    </div>` : ""}
 
-  <div class="row" style="font-weight:bold">
-    <span>Grand Total</span>
-    <span>₹${total.toFixed(2)}</span>
-  </div>
+    <div class="line"></div>
 
-  ${advance > 0 ? `
-  <div class="row">
-    <span>Advance</span>
-    <span>₹${advance.toFixed(2)}</span>
-  </div>` : ""}
+    <div class="row" style="font-weight:bold">
+      <span>Grand Total</span>
+      <span>₹${total.toFixed(2)}</span>
+    </div>
 
-  ${received > 0 ? `
-  <div class="row">
-    <span>Paid</span>
-    <span>₹${received.toFixed(2)}</span>
-  </div>` : ""}
+    ${advance > 0 ? `
+    <div class="row">
+      <span>Advance Paid</span>
+      <span>₹${advance.toFixed(2)}</span>
+    </div>` : ""}
 
-  <div class="row">
-    <span>Balance</span>
-    <span>₹${balance.toFixed(2)}</span>
-  </div>
+    <div class="row" style="font-weight:bold; margin-top: 5px;">
+      <span>Amount Received</span>
+      <span style="font-size: 14px;">₹${received.toFixed(2)}</span>
+    </div>
 
-  <div class="line"></div>
+    <div class="line"></div>
 
-  <div class="center">
-    🙏 THANK YOU
-  </div>
+    <div class="row balance-row" style="font-weight:bold; font-size: 13px;">
+      <span>${isChangeDue ? "CHANGE AMOUNT" : "BALANCE AMOUNT"}</span>
+      <span class="${isChangeDue ? 'change-amount' : 'due-amount'}">
+        ₹${absoluteBalance.toFixed(2)}
+      </span>
+    </div>
+    
+    ${!isChangeDue && balance > 0 ? `
+    <div class="row" style="margin-top: 3px;">
+      <span style="color: #e53e3e; font-size: 10px;">(Amount Due)</span>
+    </div>` : isChangeDue ? `
+    <div class="row" style="margin-top: 3px;">
+      <span style="color: #38a169; font-size: 10px;">(Balance)</span>
+    </div>` : `
+    <div class="row" style="margin-top: 3px;">
+      <span style="color: #38a169; font-size: 10px;">(Fully Paid)</span>
+    </div>`}
 
-  </body>
-  </html>
+    <div class="line"></div>
+
+    <div class="center">
+      🙏 THANK YOU<br/>
+      <span style="font-size: 9px;">Visit Again!</span>
+    </div>
+
+    </body>
+    </html>
   `);
 };
 const printKOT = () => {
@@ -1514,6 +1629,7 @@ const pendingPreOrders = useMemo(() => {
               </div>
             </div>
           </div>
+          
 
           <div className="h-8 w-[1px] bg-slate-200 mx-2" />
 
@@ -1558,6 +1674,19 @@ const pendingPreOrders = useMemo(() => {
               </span>
             )}
           </button>
+          {/* Credit Due Alert Button */}
+<button
+  onClick={() => setShowCreditDueModal(true)}
+  className="relative p-2 hover:bg-red-50 rounded-full transition-colors"
+>
+  <AlertCircle size={20} className="text-red-600" />
+  
+  {dueNotifications.length > 0 && (
+    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+      {dueNotifications.length}
+    </span>
+  )}
+</button>
           {/* Delivery Button */}
 <button
   onClick={() => setShowDeliveryModal(true)}
@@ -2310,10 +2439,6 @@ taxPercentage={taxConfig.percentage}
 <AnimatePresence>
   {showCreditModal && (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-
-      {/*
-        CALCULATED CREDIT
-      */}
       {(() => {
         const availableCredit =
           Number(selectedCustomer?.credit_limit || 0) -
@@ -2326,132 +2451,158 @@ taxPercentage={taxConfig.percentage}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
           >
-
             {/* HEADER */}
             <div className="bg-orange-500 px-6 py-5 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-white">
-                  Pay on Credit
-                </h2>
-
-                <p className="text-orange-100 text-sm mt-1">
-                  Generate bill using customer credit
-                </p>
+                <h2 className="text-2xl font-bold text-white">Pay on Credit</h2>
+                <p className="text-orange-100 text-sm mt-1">Set due date for this credit</p>
               </div>
-
-              <button
-                onClick={() => setShowCreditModal(false)}
-                className="text-white hover:bg-white/20 rounded-full p-2 transition"
-              >
+              <button onClick={() => setShowCreditModal(false)} className="text-white hover:bg-white/20 rounded-full p-2">
                 <X size={22} />
               </button>
             </div>
 
             {/* BODY */}
             <div className="p-6 space-y-5">
-
-              {/* CUSTOMER DETAILS */}
+              {/* Customer & Bill Info */}
               <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border">
-
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500">
-                    Customer
-                  </span>
-
-                  <span className="font-semibold text-gray-900">
-                    {selectedCustomer?.name || customerName || "Guest"}
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Customer</span>
+                  <span className="font-semibold">{selectedCustomer?.name || customerName}</span>
                 </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500">
-                    Phone
-                  </span>
-
-                  <span className="font-medium text-gray-800">
-                    {selectedCustomer?.phone || customerPhone || "-"}
-                  </span>
-                </div>
-
-                <div className="border-t pt-3 flex justify-between items-center">
-                  <span className="text-gray-500">
-                    Credit Limit
-                  </span>
-
-                  <span className="font-bold text-blue-600">
-                    ₹{Number(
-                      selectedCustomer?.credit_limit || 0
-                    ).toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500">
-                    Used Credit
-                  </span>
-
-                  <span className="font-bold text-red-500">
-                    ₹{Number(
-                      selectedCustomer?.credits || 0
-                    ).toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center bg-green-50 rounded-xl px-4 py-3">
-                  <span className="font-semibold text-green-700">
-                    Available Credit
-                  </span>
-
-                  <span className="text-xl font-black text-green-700">
-                    ₹{availableCredit.toFixed(2)}
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Bill Amount</span>
+                  <span className="font-bold text-orange-600">₹{Number(dueAmount || 0).toFixed(2)}</span>
                 </div>
               </div>
 
-              {/* BILL AMOUNT */}
-              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 text-center">
-                <p className="text-sm text-orange-700 mb-1">
-                  Bill Amount
-                </p>
-
-                <h1 className="text-4xl font-black text-orange-600">
-                  ₹{Number(dueAmount || 0).toFixed(2)}
-                </h1>
+              {/* Due Date Picker */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Credit Due Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={creditDueDate}
+                  onChange={(e) => setCreditDueDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500"
+                  min={new Date().toISOString().split("T")[0]} // Can't set past date
+                />
               </div>
 
-              {/* WARNING */}
+              {/* Optional Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Credit Note (Optional)</label>
+                <textarea
+                  value={creditNote}
+                  onChange={(e) => setCreditNote(e.target.value)}
+                  placeholder="Add note for this credit..."
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 h-20 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              {/* Warning */}
               {availableCredit < Number(dueAmount || 0) && (
-                <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-4 py-3 text-sm font-medium">
+                <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-4 py-3 text-sm">
                   Insufficient available credit
                 </div>
               )}
 
-              {/* BUTTONS */}
+              {/* Buttons */}
               <div className="flex gap-3 pt-2">
-
                 <button
                   onClick={() => setShowCreditModal(false)}
-                  className="flex-1 py-4 rounded-2xl border border-gray-300 font-semibold hover:bg-gray-50 transition"
+                  className="flex-1 py-4 rounded-2xl border border-gray-300 font-semibold hover:bg-gray-50"
                 >
                   Cancel
                 </button>
 
                 <button
-                  disabled={
-                    availableCredit < Number(dueAmount || 0)
-                  }
+                  disabled={!creditDueDate || isPaying || availableCredit < Number(dueAmount || 0)}
                   onClick={handleCreditPayment}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold transition"
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold transition"
                 >
-                  Use Credit & Print Bill
+                  {isPaying ? "Processing..." : "Confirm Credit & Set Due Date"}
                 </button>
-
               </div>
             </div>
           </motion.div>
         );
       })()}
     </div>
+  )}
+</AnimatePresence>
+{/* ==================== CREDIT DUE ALERTS MODAL ==================== */}
+<AnimatePresence>
+  {showCreditDueModal && (
+    <Modal
+      title="Credit Due Alerts"
+      onClose={() => setShowCreditDueModal(false)}
+    >
+      <div className="space-y-5">
+        {dueNotifications.length === 0 ? (
+          <div className="text-center py-20 text-gray-400">
+            <CheckCircle size={52} className="mx-auto mb-4 text-green-300" />
+            <p className="text-lg font-medium">No due credit alerts</p>
+            <p className="text-sm text-gray-500 mt-1">All credit payments are up to date</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[65vh] overflow-y-auto pr-2">
+            {dueNotifications.map((n, i) => (
+              <div
+                key={i}
+                className="bg-white border border-red-200 hover:border-red-400 rounded-3xl p-5 transition-all hover:shadow-md"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="font-mono text-2xl font-bold text-red-600">#{n.order_id}</p>
+                    <p className="text-sm text-gray-600 mt-1">{n.customer}</p>
+                    {n.phone && (
+                      <p className="text-xs text-gray-500">{n.phone}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Due Amount</p>
+                    <p className="text-2xl font-bold text-red-600">₹{n.amount}</p>
+                  </div>
+                </div>
+
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-3 text-sm">
+                  <p className="text-red-700 font-medium">Due Date: {new Date(n.due_date).toLocaleDateString('en-IN')}</p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    // Find the full bill and open it
+                    const fullBill = savedBills.find(b => b.order_id === n.order_id);
+                    if (fullBill) {
+                      handleSelectBill(fullBill);
+                      setShowCreditDueModal(false);
+                      setShowPaymentModal(true);
+                    }
+                  }}
+                  className="mt-4 w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-2xl font-semibold transition"
+                >
+                  Process Payment Now
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Summary */}
+        {dueNotifications.length > 0 && (
+          <div className="bg-red-50 border border-red-100 rounded-2xl p-4 text-sm">
+            <div className="flex justify-between font-medium">
+              <span>Total Overdue Orders: <strong>{dueNotifications.length}</strong></span>
+              <span className="text-red-600">
+                Total Due: ₹{dueNotifications.reduce((sum, n) => sum + n.amount, 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   )}
 </AnimatePresence>
     <AnimatePresence>
@@ -2648,6 +2799,7 @@ taxPercentage={taxConfig.percentage}
   </Modal>
 )}
 </AnimatePresence>
+
     </div>
   );
 
