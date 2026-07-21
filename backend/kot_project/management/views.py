@@ -177,12 +177,22 @@ class FoodItemViewSet(viewsets.ModelViewSet):
     """
     DRF ViewSet for FoodItem model with stock and timing management
     """
-    queryset = FoodItem.objects.filter(is_active=True).order_by('category', 'food_name')
+    queryset = (
+        FoodItem.objects
+        .filter(is_active=True)
+        .prefetch_related("variants")
+        .order_by("category", "food_name")
+    ).order_by('category', 'food_name')
     serializer_class = FoodItemSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = FoodItem.objects.filter(is_active=True)
+        queryset = (
+        FoodItem.objects
+        .filter(is_active=True)
+        .prefetch_related("variants")
+        .order_by("category", "food_name")
+    )
         
         # Filter by query parameters
         category = self.request.query_params.get('category')

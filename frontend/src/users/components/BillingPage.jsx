@@ -792,7 +792,7 @@ const handleGenerateBill = async (autoPayment = false) => {
     const res = await axios.post(`${BILL_API}create_order/`, payload);
 
     setSavedBills((prev) => [res.data, ...prev]);
-    fetchBills();
+    // fetchBills();
     setSelectedBill(res.data);
 
     if (!autoPayment) {
