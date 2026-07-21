@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny 
 from django.utils import timezone
 from django.db.models import Sum, Q
+from django.core.cache import cache
 from datetime import date
 
 from django.conf import settings
@@ -160,7 +161,11 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
         total = Decimal(str(request.data.get('total_amount', 0)))
 
         discount = Decimal('0')
-        discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+        discount_obj = cache.get("discount_setting")
+
+        if not discount_obj:
+            discount_obj = DiscountSetting.objects.filter(is_active=True).first()
+            cache.set("discount_setting", discount_obj, 300)
 
         if discount_obj and total >= discount_obj.min_amount:
             if discount_obj.discount_type == "percentage":
@@ -174,7 +179,11 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='create_order')
     def create_order(self, request):
     
-        setting = RestaurantSetting.objects.first()
+        setting = cache.get("restaurant_setting")
+
+        if not setting:
+            setting = RestaurantSetting.objects.first()
+            cache.set("restaurant_setting", setting, 300)
         tax_percentage = setting.tax_percentage if setting else Decimal('5')
         data = request.data
         credit_due_date = data.get('credit_due_date')
@@ -247,7 +256,11 @@ class CashierOrderViewSet(viewsets.ModelViewSet):
                 )
 
             # ───── TAX ─────
-            tax_obj = TaxSetting.objects.first()
+            tax_obj = cache.get("tax_setting")
+
+            if not tax_obj:
+                tax_obj = TaxSetting.objects.first()
+                cache.set("tax_setting", tax_obj, 300)
 
             tax_percentage = (
                 Decimal(str(tax_obj.percentage))
